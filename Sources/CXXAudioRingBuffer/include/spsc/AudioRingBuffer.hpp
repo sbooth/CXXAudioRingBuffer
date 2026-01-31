@@ -224,9 +224,9 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
 
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
-
     const auto framesUsed = writePos - readPos;
     const auto framesFree = capacity_ - framesUsed;
+
     if (framesFree == 0) [[unlikely]] {
         return 0;
     }
@@ -243,9 +243,9 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
     };
 
     const auto framesToWrite = std::min(framesFree, frameCount);
-
     const auto writeIndex = writePos & capacityMask_;
     const auto framesToEnd = capacity_ - writeIndex;
+
     if (framesToWrite <= framesToEnd) [[likely]] {
         copyToBuffersFromAudioBufferList(buffers_, writeIndex * format_.mBytesPerFrame, bufferList, 0,
                                          framesToWrite * format_.mBytesPerFrame);
@@ -257,7 +257,6 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
     }
 
     writePosition_.store(writePos + framesToWrite, std::memory_order_release);
-
     return framesToWrite;
 }
 
@@ -269,8 +268,8 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-
     const auto framesAvailable = writePos - readPos;
+
     if (framesAvailable == 0) [[unlikely]] {
         for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
             std::memset(bufferList->mBuffers[i].mData, 0, bufferList->mBuffers[i].mDataByteSize);
@@ -290,9 +289,9 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
     };
 
     const auto framesToRead = std::min(framesAvailable, frameCount);
-
     const auto readIndex = readPos & capacityMask_;
     const auto framesToEnd = capacity_ - readIndex;
+
     if (framesToRead <= framesToEnd) [[likely]] {
         copyToAudioBufferListFromBuffers(bufferList, 0, buffers_, readIndex * format_.mBytesPerFrame,
                                          framesToRead * format_.mBytesPerFrame);
@@ -327,8 +326,8 @@ inline auto AudioRingBuffer::skip(SizeType frameCount) noexcept -> SizeType {
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-
     const auto framesAvailable = writePos - readPos;
+
     if (framesAvailable == 0) [[unlikely]] {
         return 0;
     }
@@ -336,7 +335,6 @@ inline auto AudioRingBuffer::skip(SizeType frameCount) noexcept -> SizeType {
     const auto framesToSkip = std::min(framesAvailable, frameCount);
 
     readPosition_.store(readPos + framesToSkip, std::memory_order_release);
-
     return framesToSkip;
 }
 
@@ -347,8 +345,8 @@ inline auto AudioRingBuffer::drain() noexcept -> SizeType {
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-
     const auto framesAvailable = writePos - readPos;
+
     if (framesAvailable == 0) [[unlikely]] {
         return 0;
     }
