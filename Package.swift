@@ -23,7 +23,7 @@ let package = Package(
             name: "CXXAudioRingBuffer",
             linkerSettings: [
                 .linkedFramework("CoreAudio"),
-            ],
+            ]
         ),
         .testTarget(
             name: "CXXAudioRingBufferTests",
