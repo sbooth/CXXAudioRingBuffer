@@ -218,6 +218,7 @@ inline bool AudioRingBuffer::isEmpty() const noexcept {
 
 inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
         -> SizeType {
+    assert(bufferList->mNumberBuffers == format_.mChannelsPerFrame);
     if (bufferList == nullptr || frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
@@ -262,6 +263,7 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
 
 inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
         -> SizeType {
+    assert(bufferList->mNumberBuffers == format_.mChannelsPerFrame);
     if (bufferList == nullptr || frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
