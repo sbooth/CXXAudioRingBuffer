@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <limits>
+#include <new>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
