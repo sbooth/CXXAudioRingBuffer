@@ -146,7 +146,7 @@ class AudioRingBuffer final {
     /// @param bufferList An audio buffer list containing the data to copy.
     /// @param frameCount The desired number of audio frames to write.
     /// @return The number of audio frames actually written.
-    [[nodiscard]] SizeType write(const AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
+    [[nodiscard]] SizeType write(const AudioBufferList &bufferList, SizeType frameCount) noexcept
             [[clang::nonblocking]];
 
     /// Reads audio and advances the read position.
@@ -157,8 +157,7 @@ class AudioRingBuffer final {
     /// @param bufferList An audio buffer list to receive the data.
     /// @param frameCount The desired number of audio frames to read.
     /// @return The number of audio frames actually read.
-    [[nodiscard]] SizeType read(AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
-            [[clang::nonblocking]];
+    [[nodiscard]] SizeType read(AudioBufferList &bufferList, SizeType frameCount) noexcept [[clang::nonblocking]];
 
     // MARK: Discarding Audio
 
@@ -241,9 +240,8 @@ inline auto AudioRingBuffer::availableToRead() const noexcept -> SizeType {
 
 // MARK: Writing and Reading Audio
 
-inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
-        -> SizeType {
-    if (bufferList == nullptr || frameCount == 0 || capacity_ == 0) [[unlikely]] {
+inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
+    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
 
@@ -258,12 +256,12 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
 
     /// Copies non-interleaved audio to a buffer array from an AudioBufferList struct.
     const auto copyToBuffersFromAudioBufferList = [](void *const _Nonnull *const _Nonnull dst, std::size_t dstOffset,
-                                                     const AudioBufferList *const _Nonnull src, std::size_t srcOffset,
+                                                     const AudioBufferList &src, std::size_t srcOffset,
                                                      std::size_t byteCount) noexcept {
-        for (UInt32 i = 0; i < src->mNumberBuffers; ++i) {
-            assert(srcOffset + byteCount <= src->mBuffers[i].mDataByteSize);
+        for (UInt32 i = 0; i < src.mNumberBuffers; ++i) {
+            assert(srcOffset + byteCount <= src.mBuffers[i].mDataByteSize);
             std::memcpy(static_cast<unsigned char *>(dst[i]) + dstOffset,
-                        static_cast<const unsigned char *>(src->mBuffers[i].mData) + srcOffset, byteCount);
+                        static_cast<const unsigned char *>(src.mBuffers[i].mData) + srcOffset, byteCount);
         }
     };
 
@@ -285,9 +283,8 @@ inline auto AudioRingBuffer::write(const AudioBufferList *const _Nonnull bufferL
     return framesToWrite;
 }
 
-inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
-        -> SizeType {
-    if (bufferList == nullptr || frameCount == 0 || capacity_ == 0) [[unlikely]] {
+inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
+    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
 
@@ -297,20 +294,20 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
 
     if (framesAvailable == 0) [[unlikely]] {
         const auto byteCount = frameCount * format_.mBytesPerFrame;
-        for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
-            assert(byteCount <= bufferList->mBuffers[i].mDataByteSize);
-            std::memset(bufferList->mBuffers[i].mData, 0, byteCount);
+        for (UInt32 i = 0; i < bufferList.mNumberBuffers; ++i) {
+            assert(byteCount <= bufferList.mBuffers[i].mDataByteSize);
+            std::memset(bufferList.mBuffers[i].mData, 0, byteCount);
         }
         return 0;
     }
 
     /// Copies non-interleaved audio to an AudioBufferList struct from a buffer array.
-    const auto copyToAudioBufferListFromBuffers = [](AudioBufferList *const _Nonnull dst, std::size_t dstOffset,
+    const auto copyToAudioBufferListFromBuffers = [](AudioBufferList &dst, std::size_t dstOffset,
                                                      const void *const _Nonnull *const _Nonnull src,
                                                      std::size_t srcOffset, std::size_t byteCount) noexcept {
-        for (UInt32 i = 0; i < dst->mNumberBuffers; ++i) {
-            assert(dstOffset + byteCount <= dst->mBuffers[i].mDataByteSize);
-            std::memcpy(static_cast<unsigned char *>(dst->mBuffers[i].mData) + dstOffset,
+        for (UInt32 i = 0; i < dst.mNumberBuffers; ++i) {
+            assert(dstOffset + byteCount <= dst.mBuffers[i].mDataByteSize);
+            std::memcpy(static_cast<unsigned char *>(dst.mBuffers[i].mData) + dstOffset,
                         static_cast<const unsigned char *>(src[i]) + srcOffset, byteCount);
         }
     };
@@ -335,9 +332,9 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
     if (framesToRead != frameCount) {
         const auto byteOffset = framesToRead * format_.mBytesPerFrame;
         const auto byteCount = (frameCount - framesToRead) * format_.mBytesPerFrame;
-        for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
-            assert(byteOffset + byteCount <= bufferList->mBuffers[i].mDataByteSize);
-            std::memset(static_cast<unsigned char *>(bufferList->mBuffers[i].mData) + byteOffset, 0, byteCount);
+        for (UInt32 i = 0; i < bufferList.mNumberBuffers; ++i) {
+            assert(byteOffset + byteCount <= bufferList.mBuffers[i].mDataByteSize);
+            std::memset(static_cast<unsigned char *>(bufferList.mBuffers[i].mData) + byteOffset, 0, byteCount);
         }
     }
 
