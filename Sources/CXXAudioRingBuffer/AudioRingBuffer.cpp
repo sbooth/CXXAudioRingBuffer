@@ -84,7 +84,6 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
     const auto alignUp = [](auto n, std::size_t align) noexcept {
         using T = decltype(n);
         static_assert(std::is_unsigned_v<T>, "n must be an unsigned integer");
-
         const auto mask = static_cast<T>(align) - 1;
         return (n + mask) & ~mask;
     };
