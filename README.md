@@ -3,7 +3,7 @@
 A lock-free SPSC ring buffer supporting non-interleaved audio.
 
 > [!NOTE]
-> C++17 is required.
+> C++20 is required.
 
 ## Installation
 

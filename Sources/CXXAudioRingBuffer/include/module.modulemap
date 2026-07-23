@@ -6,7 +6,7 @@
 //
 
 module CXXAudioRingBuffer {
-    requires cplusplus17
+    requires cplusplus20
     header "spsc/AudioRingBuffer.hpp"
     export *
 }
