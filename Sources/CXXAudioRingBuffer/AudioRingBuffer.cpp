@@ -88,19 +88,25 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
         return (n + mask) & ~mask;
     };
 
-    /// Values larger than this will overflow AudioBuffer.mDataByteSize
-    const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
+    const auto channels = static_cast<std::size_t>(format.mChannelsPerFrame);
 
     // Account for pointer array, initial offset padding, and worst-case per-channel alignment padding
     const auto perChannelOverhead = sizeof(void *) + alignment;
-    const auto reserved = static_cast<std::size_t>(format.mChannelsPerFrame) * perChannelOverhead + alignment;
+    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - alignment) / perChannelOverhead;
+
+    // Check if channel count alone would cause size_t overflow during reserved calculations
+    if (channels > maxChannels) [[unlikely]] {
+        return false;
+    }
+
+    const auto reserved = channels * perChannelOverhead + alignment;
+
+    /// Values larger than this will overflow AudioBuffer.mDataByteSize
+    const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
 
     /// Values larger than this will exceed the maximum allocation size
     const auto maxAllocationFrameCount =
-            reserved < std::numeric_limits<std::size_t>::max()
-                    ? ((std::numeric_limits<std::size_t>::max() - reserved) / format.mChannelsPerFrame) /
-                              format.mBytesPerFrame
-                    : 0;
+            ((std::numeric_limits<std::size_t>::max() - reserved) / channels) / format.mBytesPerFrame;
 
     /// The maximum size per channel buffer in audio frames
     const auto maxChannelBufferFrameSize =
@@ -114,9 +120,16 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
 
     const auto channelBufferByteSize = channelBufferFrameSize * format.mBytesPerFrame;
     const auto alignedChannelByteSize = alignUp(channelBufferByteSize, alignment);
-    const auto pointerArraySize = format.mChannelsPerFrame * sizeof(void *);
-    const auto allocationSize =
-            pointerArraySize + (alignment - 1) + (alignedChannelByteSize * format.mChannelsPerFrame);
+    const auto pointerArraySize = channels * sizeof(void *);
+
+    // Ensure the total allocation size doesn't overflow size_t
+    const auto maxAlignedChannelByteSize =
+            (std::numeric_limits<std::size_t>::max() - pointerArraySize - (alignment - 1)) / channels;
+    if (alignedChannelByteSize > maxAlignedChannelByteSize) [[unlikely]] {
+        return false;
+    }
+
+    const auto allocationSize = pointerArraySize + (alignment - 1) + (alignedChannelByteSize * channels);
 
     auto *allocation = std::malloc(allocationSize);
     if (allocation == nullptr) [[unlikely]] {
