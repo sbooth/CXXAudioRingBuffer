@@ -9,6 +9,7 @@
 
 #include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <new>
