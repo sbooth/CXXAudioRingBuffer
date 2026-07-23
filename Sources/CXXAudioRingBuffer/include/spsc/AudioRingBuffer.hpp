@@ -241,11 +241,10 @@ inline auto AudioRingBuffer::availableToRead() const noexcept -> SizeType {
 // MARK: Writing and Reading Audio
 
 inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
     if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
-
-    assert(bufferList->mNumberBuffers == format_.mChannelsPerFrame);
 
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
@@ -286,11 +285,10 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
 }
 
 inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
     if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
-
-    assert(bufferList->mNumberBuffers == format_.mChannelsPerFrame);
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
