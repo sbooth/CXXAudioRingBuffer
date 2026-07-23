@@ -103,14 +103,18 @@ class AudioRingBuffer final {
     /// @return The buffer capacity in audio frames.
     [[nodiscard]] SizeType capacity() const noexcept [[clang::nonblocking]];
 
-    /// Returns the current write position in the buffer.
+    /// Returns the current free-running write position in the buffer.
+    ///
+    /// This value is a monotonically increasing frame counter not wrapped to the buffer's capacity.
     /// @note The result of this method is only accurate when called from the producer.
-    /// @return The current write position in audio frames.
+    /// @return The current free-running write position in audio frames.
     [[nodiscard]] SizeType writePosition() const noexcept [[clang::nonblocking]];
 
-    /// Returns the current read position in the buffer.
+    /// Returns the current free-running read position in the buffer.
+    ///
+    /// This value is a monotonically increasing frame counter not wrapped to the buffer's capacity.
     /// @note The result of this method is only accurate when called from the consumer.
-    /// @return The current read position in audio frames.
+    /// @return The current free-running read position in audio frames.
     [[nodiscard]] SizeType readPosition() const noexcept [[clang::nonblocking]];
 
     // MARK: Buffer Usage
