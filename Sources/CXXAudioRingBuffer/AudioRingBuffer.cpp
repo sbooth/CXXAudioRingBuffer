@@ -150,7 +150,7 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
 }
 
 void spsc::AudioRingBuffer::deallocate() noexcept {
-    if (buffers_) [[likely]] {
+    if (buffers_ != nullptr) [[likely]] {
         std::free(buffers_);
         buffers_ = nullptr;
 
