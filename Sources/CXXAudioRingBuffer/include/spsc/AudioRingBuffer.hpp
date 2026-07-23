@@ -82,48 +82,49 @@ class AudioRingBuffer final {
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
     /// @return true on success, false if memory could not be allocated, the audio format is not supported, or the
     /// buffer capacity is not supported.
-    bool allocate(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) noexcept;
+    [[nodiscard]] bool allocate(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) noexcept
+            [[clang::allocating]];
 
     /// Frees any space allocated for audio data.
     /// @note This method is not thread safe.
-    void deallocate() noexcept;
+    void deallocate() noexcept [[clang::allocating]];
 
     /// Returns true if the buffer has allocated space for audio data.
-    [[nodiscard]] explicit operator bool() const noexcept;
+    [[nodiscard]] explicit operator bool() const noexcept [[clang::nonblocking]];
 
     // MARK: Buffer Information
 
     /// Returns the format of the audio stored in the buffer.
     /// @note This method is safe to call from both producer and consumer.
     /// @return The audio format of the buffer.
-    [[nodiscard]] const AudioStreamBasicDescription &format() const noexcept;
+    [[nodiscard]] const AudioStreamBasicDescription &format() const noexcept [[clang::nonblocking]];
 
     /// Returns the capacity of the buffer.
     /// @note This method is safe to call from both producer and consumer.
     /// @return The buffer capacity in audio frames.
-    [[nodiscard]] SizeType capacity() const noexcept;
+    [[nodiscard]] SizeType capacity() const noexcept [[clang::nonblocking]];
 
     // MARK: Buffer Usage
 
     /// Returns the amount of free space in the buffer.
     /// @note The result of this method is only accurate when called from the producer.
     /// @return The number of audio frames of free space available for writing.
-    [[nodiscard]] SizeType freeSpace() const noexcept;
+    [[nodiscard]] SizeType freeSpace() const noexcept [[clang::nonblocking]];
 
     /// Returns true if the buffer is full.
     /// @note The result of this method is only accurate when called from the producer.
     /// @return true if the buffer is full.
-    [[nodiscard]] bool isFull() const noexcept;
+    [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
     /// Returns the amount of audio in the buffer.
     /// @note The result of this method is only accurate when called from the consumer.
     /// @return The number of audio frames available for reading.
-    [[nodiscard]] SizeType availableFrames() const noexcept;
+    [[nodiscard]] SizeType availableFrames() const noexcept [[clang::nonblocking]];
 
     /// Returns true if the buffer is empty.
     /// @note The result of this method is only accurate when called from the consumer.
     /// @return true if the buffer contains no data.
-    [[nodiscard]] bool isEmpty() const noexcept;
+    [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
     // MARK: Writing and Reading Audio
 
@@ -132,7 +133,8 @@ class AudioRingBuffer final {
     /// @param bufferList An audio buffer list containing the data to copy.
     /// @param frameCount The desired number of audio frames to write.
     /// @return The number of audio frames actually written.
-    SizeType write(const AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept;
+    [[nodiscard]] SizeType write(const AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
+            [[clang::nonblocking]];
 
     /// Reads audio and advances the read position.
     ///
@@ -142,7 +144,8 @@ class AudioRingBuffer final {
     /// @param bufferList An audio buffer list to receive the data.
     /// @param frameCount The desired number of audio frames to read.
     /// @return The number of audio frames actually read.
-    SizeType read(AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept;
+    [[nodiscard]] SizeType read(AudioBufferList *const _Nonnull bufferList, SizeType frameCount) noexcept
+            [[clang::nonblocking]];
 
     // MARK: Discarding Audio
 
@@ -150,12 +153,12 @@ class AudioRingBuffer final {
     /// @note This method is only safe to call from the consumer.
     /// @param frameCount The desired number of audio frames to skip.
     /// @return The number of audio frames actually skipped.
-    SizeType skip(SizeType frameCount) noexcept;
+    SizeType skip(SizeType frameCount) noexcept [[clang::nonblocking]];
 
     /// Advances the read position to the write position, emptying the buffer.
     /// @note This method is only safe to call from the consumer.
     /// @return The number of audio frames discarded.
-    SizeType drain() noexcept;
+    SizeType drain() noexcept [[clang::nonblocking]];
 
   private:
     /// The memory buffers holding the data, consisting of channel pointers and buffers allocated in one chunk.
@@ -272,8 +275,10 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
     const auto framesAvailable = writePos - readPos;
 
     if (framesAvailable == 0) [[unlikely]] {
+        const auto byteCount = frameCount * format_.mBytesPerFrame;
         for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
-            std::memset(bufferList->mBuffers[i].mData, 0, bufferList->mBuffers[i].mDataByteSize);
+            assert(byteCount <= bufferList->mBuffers[i].mDataByteSize);
+            std::memset(bufferList->mBuffers[i].mData, 0, byteCount);
         }
         return 0;
     }
