@@ -81,8 +81,12 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
     static_assert(std::has_single_bit(alignment), "alignment must be a power of two");
 
     /// Rounds `n` to the next higher multiple of `align`
-    const auto alignUp = [](std::size_t n, std::size_t align) noexcept -> std::size_t {
-        return (n + (align - 1)) & ~(align - 1);
+    const auto alignUp = [](auto n, std::size_t align) noexcept {
+        using T = decltype(n);
+        static_assert(std::is_unsigned_v<T>, "n must be an unsigned integer");
+
+        const auto mask = static_cast<T>(align) - 1;
+        return (n + mask) & ~mask;
     };
 
     /// Values larger than this will overflow AudioBuffer.mDataByteSize
