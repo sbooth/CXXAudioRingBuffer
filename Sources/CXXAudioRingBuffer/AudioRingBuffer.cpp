@@ -13,8 +13,8 @@
 #include <cstdlib>
 #include <limits>
 #include <new>
-#include <numeric>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 // MARK: Construction and Destruction
