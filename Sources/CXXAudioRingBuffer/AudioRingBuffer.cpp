@@ -80,7 +80,7 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
 
     static_assert(std::has_single_bit(alignment), "alignment must be a power of two");
 
-    /// Rounds `n` to the next higher multiple of `align`
+    /// Rounds `n` to the next multiple of `align`
     const auto alignUp = [](auto n, std::size_t align) noexcept {
         using T = decltype(n);
         static_assert(std::is_unsigned_v<T>, "n must be an unsigned integer");
@@ -90,16 +90,19 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
 
     const auto channels = static_cast<std::size_t>(format.mChannelsPerFrame);
 
+    // Worst-case padding needed to align an arbitrary memory address
+    constexpr std::size_t maxPadding = alignment - 1;
+
     // Account for pointer array, initial offset padding, and worst-case per-channel alignment padding
-    const auto perChannelOverhead = sizeof(void *) + alignment;
-    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - alignment) / perChannelOverhead;
+    const auto perChannelOverhead = sizeof(void *) + maxPadding;
+    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - maxPadding) / perChannelOverhead;
 
     // Check if channel count alone would cause size_t overflow during reserved calculations
     if (channels > maxChannels) [[unlikely]] {
         return false;
     }
 
-    const auto reserved = channels * perChannelOverhead + alignment;
+    const auto reserved = channels * perChannelOverhead + maxPadding;
 
     /// Values larger than this will overflow AudioBuffer.mDataByteSize
     const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
