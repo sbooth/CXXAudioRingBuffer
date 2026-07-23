@@ -105,25 +105,25 @@ class AudioRingBuffer final {
 
     // MARK: Buffer Usage
 
-    /// Returns the amount of free space in the buffer.
-    /// @note The result of this method is only accurate when called from the producer.
-    /// @return The number of audio frames of free space available for writing.
-    [[nodiscard]] SizeType freeSpace() const noexcept [[clang::nonblocking]];
-
     /// Returns true if the buffer is full.
     /// @note The result of this method is only accurate when called from the producer.
     /// @return true if the buffer is full.
     [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
-    /// Returns the amount of audio in the buffer.
-    /// @note The result of this method is only accurate when called from the consumer.
-    /// @return The number of audio frames available for reading.
-    [[nodiscard]] SizeType availableFrames() const noexcept [[clang::nonblocking]];
-
     /// Returns true if the buffer is empty.
     /// @note The result of this method is only accurate when called from the consumer.
     /// @return true if the buffer contains no data.
     [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
+
+    /// Returns the frame count of free space in the buffer.
+    /// @note The result of this method is only accurate when called from the producer.
+    /// @return The number of audio frames of free space available for writing.
+    [[nodiscard]] SizeType availableToWrite() const noexcept [[clang::nonblocking]];
+
+    /// Returns the frame count of audio in the buffer.
+    /// @note The result of this method is only accurate when called from the consumer.
+    /// @return The number of audio frames available for reading.
+    [[nodiscard]] SizeType availableToRead() const noexcept [[clang::nonblocking]];
 
     // MARK: Writing and Reading Audio
 
@@ -193,28 +193,28 @@ inline auto AudioRingBuffer::capacity() const noexcept -> SizeType { return capa
 
 // MARK: Buffer Usage
 
-inline auto AudioRingBuffer::freeSpace() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_acquire);
-    return capacity_ - (writePos - readPos);
-}
-
 inline bool AudioRingBuffer::isFull() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     return (writePos - readPos) == capacity_;
 }
 
-inline auto AudioRingBuffer::availableFrames() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos - readPos;
-}
-
 inline bool AudioRingBuffer::isEmpty() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return writePos == readPos;
+}
+
+inline auto AudioRingBuffer::availableToWrite() const noexcept -> SizeType {
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
+    const auto readPos = readPosition_.load(std::memory_order_acquire);
+    return capacity_ - (writePos - readPos);
+}
+
+inline auto AudioRingBuffer::availableToRead() const noexcept -> SizeType {
+    const auto writePos = writePosition_.load(std::memory_order_acquire);
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
+    return writePos - readPos;
 }
 
 // MARK: Writing and Reading Audio
