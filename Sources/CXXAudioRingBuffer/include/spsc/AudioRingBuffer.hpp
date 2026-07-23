@@ -145,16 +145,16 @@ class AudioRingBuffer final {
 
     // MARK: Discarding Audio
 
-    /// Skips audio and advances the read position.
+    /// Discards audio and advances the read position.
     /// @note This method is only safe to call from the consumer.
-    /// @param frameCount The desired number of audio frames to skip.
-    /// @return The number of audio frames actually skipped.
-    SizeType skip(SizeType frameCount) noexcept;
+    /// @param frameCount The desired number of audio frames to discard.
+    /// @return The number of audio frames actually discarded.
+    SizeType discard(SizeType frameCount) noexcept;
 
-    /// Advances the read position to the write position, emptying the buffer.
+    /// Discards all audio from the buffer and advances the read position.
     /// @note This method is only safe to call from the consumer.
     /// @return The number of audio frames discarded.
-    SizeType drain() noexcept;
+    SizeType discardAll() noexcept;
 
   private:
     /// The memory buffers holding the data, consisting of channel pointers and buffers allocated in one chunk.
@@ -319,7 +319,7 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
 
 // MARK: Discarding Audio
 
-inline auto AudioRingBuffer::skip(SizeType frameCount) noexcept -> SizeType {
+inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
@@ -338,7 +338,7 @@ inline auto AudioRingBuffer::skip(SizeType frameCount) noexcept -> SizeType {
     return framesToSkip;
 }
 
-inline auto AudioRingBuffer::drain() noexcept -> SizeType {
+inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
     if (capacity_ == 0) [[unlikely]] {
         return 0;
     }
