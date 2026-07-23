@@ -332,10 +332,9 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
         return 0;
     }
 
-    const auto framesToSkip = std::min(framesAvailable, frameCount);
-
-    readPosition_.store(readPos + framesToSkip, std::memory_order_release);
-    return framesToSkip;
+    const auto framesToDiscard = std::min(framesAvailable, frameCount);
+    readPosition_.store(readPos + framesToDiscard, std::memory_order_release);
+    return framesToDiscard;
 }
 
 inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
