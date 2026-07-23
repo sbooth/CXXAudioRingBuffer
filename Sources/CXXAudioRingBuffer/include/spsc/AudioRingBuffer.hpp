@@ -103,6 +103,20 @@ class AudioRingBuffer final {
     /// @return The buffer capacity in audio frames.
     [[nodiscard]] SizeType capacity() const noexcept [[clang::nonblocking]];
 
+    /// Returns the current free-running write position in the buffer.
+    ///
+    /// This value is a monotonically increasing frame counter not wrapped to the buffer's capacity.
+    /// @note The result of this method is only accurate when called from the producer.
+    /// @return The current free-running write position in audio frames.
+    [[nodiscard]] SizeType writePosition() const noexcept [[clang::nonblocking]];
+
+    /// Returns the current free-running read position in the buffer.
+    ///
+    /// This value is a monotonically increasing frame counter not wrapped to the buffer's capacity.
+    /// @note The result of this method is only accurate when called from the consumer.
+    /// @return The current free-running read position in audio frames.
+    [[nodiscard]] SizeType readPosition() const noexcept [[clang::nonblocking]];
+
     // MARK: Buffer Usage
 
     /// Returns true if the buffer is full.
@@ -190,6 +204,14 @@ inline AudioRingBuffer::operator bool() const noexcept { return buffers_ != null
 inline const AudioStreamBasicDescription &AudioRingBuffer::format() const noexcept { return format_; }
 
 inline auto AudioRingBuffer::capacity() const noexcept -> SizeType { return capacity_; }
+
+inline auto AudioRingBuffer::writePosition() const noexcept -> SizeType {
+    return writePosition_.load(std::memory_order_relaxed);
+}
+
+inline auto AudioRingBuffer::readPosition() const noexcept -> SizeType {
+    return readPosition_.load(std::memory_order_relaxed);
+}
 
 // MARK: Buffer Usage
 
