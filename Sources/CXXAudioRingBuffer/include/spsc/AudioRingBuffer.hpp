@@ -271,8 +271,10 @@ inline auto AudioRingBuffer::read(AudioBufferList *const _Nonnull bufferList, Si
     const auto framesAvailable = writePos - readPos;
 
     if (framesAvailable == 0) [[unlikely]] {
+        const auto byteCount = frameCount * format_.mBytesPerFrame;
         for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
-            std::memset(bufferList->mBuffers[i].mData, 0, bufferList->mBuffers[i].mDataByteSize);
+            assert(byteCount <= bufferList->mBuffers[i].mDataByteSize);
+            std::memset(bufferList->mBuffers[i].mData, 0, byteCount);
         }
         return 0;
     }
