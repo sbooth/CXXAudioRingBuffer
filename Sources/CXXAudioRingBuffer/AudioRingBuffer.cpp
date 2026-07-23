@@ -120,19 +120,19 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
     const auto channelBufferByteSize = channelBufferFrameSize * format.mBytesPerFrame;
     const auto allocationSize = (channelBufferByteSize + sizeof(void *)) * format.mChannelsPerFrame;
 
-    auto allocation = std::malloc(allocationSize);
+    auto allocation = std::calloc(1, allocationSize);
     if (allocation == nullptr) [[unlikely]] {
         return false;
     }
 
-    // Zero the entire allocation
-    std::memset(allocation, 0, allocationSize);
+    // buffers_ must point to the base allocation address so std::free() works correctly in deallocate()
+    buffers_ = reinterpret_cast<void **>(allocation);
+
+    // Advance past the void * array
+    auto address = reinterpret_cast<uintptr_t>(allocation);
+    address += format.mChannelsPerFrame * sizeof(void *);
 
     // Assign the channel buffers
-    auto address = reinterpret_cast<uintptr_t>(allocation);
-
-    buffers_ = reinterpret_cast<void **>(address);
-    address += format.mChannelsPerFrame * sizeof(void *);
     for (UInt32 i = 0; i < format.mChannelsPerFrame; ++i) {
         buffers_[i] = reinterpret_cast<void *>(address);
         address += channelBufferByteSize;
