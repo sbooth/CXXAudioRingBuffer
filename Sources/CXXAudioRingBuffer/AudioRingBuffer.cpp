@@ -88,21 +88,18 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
         return (n + mask) & ~mask;
     };
 
-    const auto channels = static_cast<std::size_t>(format.mChannelsPerFrame);
-
     // Worst-case padding needed to align an arbitrary memory address
     constexpr std::size_t maxPadding = alignment - 1;
 
-    // Account for pointer array, initial offset padding, and worst-case per-channel alignment padding
-    const auto perChannelOverhead = sizeof(void *) + maxPadding;
-    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - maxPadding) / perChannelOverhead;
-
-    // Check if channel count alone would cause size_t overflow during reserved calculations
+    // Bound channels so pointerArraySize cannot overflow
+    const auto channels = static_cast<std::size_t>(format.mChannelsPerFrame);
+    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - maxPadding) / sizeof(void *);
     if (channels > maxChannels) [[unlikely]] {
         return false;
     }
 
-    const auto reserved = channels * perChannelOverhead + maxPadding;
+    const auto pointerArraySize = channels * sizeof(void *);
+    const auto reserved = pointerArraySize + maxPadding;
 
     /// Values larger than this will overflow AudioBuffer.mDataByteSize
     const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
@@ -123,11 +120,9 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
 
     const auto channelBufferByteSize = channelBufferFrameSize * format.mBytesPerFrame;
     const auto alignedChannelByteSize = alignUp(channelBufferByteSize, alignment);
-    const auto pointerArraySize = channels * sizeof(void *);
 
-    // Ensure the total allocation size doesn't overflow size_t
-    const auto maxAlignedChannelByteSize =
-            (std::numeric_limits<std::size_t>::max() - pointerArraySize - (alignment - 1)) / channels;
+    // Ensure the total allocation size doesn't overflow
+    const auto maxAlignedChannelByteSize = (std::numeric_limits<std::size_t>::max() - reserved) / channels;
     if (alignedChannelByteSize > maxAlignedChannelByteSize) [[unlikely]] {
         return false;
     }
