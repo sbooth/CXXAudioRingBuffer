@@ -7,6 +7,7 @@
 
 #include "spsc/AudioRingBuffer.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <numeric>
 #include <thread>
