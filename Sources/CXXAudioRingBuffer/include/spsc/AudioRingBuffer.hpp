@@ -250,9 +250,8 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     const auto availableToRead = writePos - readPos;
 
-    // Under correct SPSC usage availableToRead should never exceed capacity_
-    assert(availableToRead <= capacity_);
-    if (availableToRead >= capacity_) [[unlikely]] {
+    if (availableToRead > capacity_) [[unlikely]] {
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
         return 0;
     }
 
@@ -298,12 +297,11 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto availableToRead = writePos - readPos;
+    auto availableToRead = writePos - readPos;
 
-    // Under correct SPSC usage availableToRead should never exceed capacity_
-    assert(availableToRead <= capacity_);
     if (availableToRead > capacity_) [[unlikely]] {
-        return 0;
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
+        availableToRead = 0;
     }
 
     const auto framesToRead = std::min(availableToRead, frameCount);
