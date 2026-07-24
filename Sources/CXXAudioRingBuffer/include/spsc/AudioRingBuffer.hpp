@@ -383,8 +383,6 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     return framesToDiscard;
 }
 
-inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
-    return discard(std::numeric_limits<SizeType>::max());
-}
+inline auto AudioRingBuffer::discardAll() noexcept -> SizeType { return discard(std::numeric_limits<SizeType>::max()); }
 
 } /* namespace spsc */
