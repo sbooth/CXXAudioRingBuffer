@@ -257,6 +257,11 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
 
     const auto availableToWrite = capacity_ - availableToRead;
     const auto framesToWrite = std::min(availableToWrite, frameCount);
+
+    if (framesToWrite == 0) [[unlikely]] {
+        return 0;
+    }
+
     const auto bytesToWrite = framesToWrite * format_.mBytesPerFrame;
     const auto channelCount = bufferList.mNumberBuffers;
 
