@@ -369,8 +369,8 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     const auto availableToRead = writePos - readPos;
 
-    assert(availableToRead <= capacity_);
     if (availableToRead == 0 || availableToRead > capacity_) [[unlikely]] {
+        assert(availableToRead <= capacity_);
         return 0;
     }
 
@@ -388,8 +388,8 @@ inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     const auto availableToRead = writePos - readPos;
 
-    assert(availableToRead <= capacity_);
     if (availableToRead == 0 || availableToRead > capacity_) [[unlikely]] {
+        assert(availableToRead <= capacity_);
         return 0;
     }
 
