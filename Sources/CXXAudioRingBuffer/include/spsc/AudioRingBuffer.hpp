@@ -143,6 +143,7 @@ class AudioRingBuffer final {
 
     /// Writes audio and advances the write position.
     /// @note This method is only safe to call from the producer.
+    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format.
     /// @param bufferList An audio buffer list containing the data to copy.
     /// @param frameCount The desired number of audio frames to write.
     /// @return The number of audio frames actually written.
@@ -154,6 +155,7 @@ class AudioRingBuffer final {
     /// If fewer than the requested number of frames are available the remainder of the audio buffer list will be set to
     /// zero.
     /// @note This method is only safe to call from the consumer.
+    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format.
     /// @param bufferList An audio buffer list to receive the data.
     /// @param frameCount The desired number of audio frames to read.
     /// @return The number of audio frames actually read.
