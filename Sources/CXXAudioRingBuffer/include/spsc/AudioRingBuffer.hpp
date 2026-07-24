@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <new>
 
 namespace spsc {
 
@@ -182,9 +183,9 @@ class AudioRingBuffer final {
     SizeType capacityMask_{0};
 
     /// The free-running write location.
-    AtomicSizeType writePosition_{0};
+    alignas(std::hardware_destructive_interference_size) AtomicSizeType writePosition_{0};
     /// The free-running read location.
-    AtomicSizeType readPosition_{0};
+    alignas(std::hardware_destructive_interference_size) AtomicSizeType readPosition_{0};
 
     static_assert(AtomicSizeType::is_always_lock_free, "Lock-free AtomicSizeType required");
 
@@ -241,43 +242,53 @@ inline auto AudioRingBuffer::availableToRead() const noexcept -> SizeType {
 // MARK: Writing and Reading Audio
 
 inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
-    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
-    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
+    if (bufferList.mNumberBuffers != format_.mChannelsPerFrame || frameCount == 0 || capacity_ == 0) [[unlikely]] {
+        assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
         return 0;
     }
 
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
-    const auto framesUsed = writePos - readPos;
-    const auto framesFree = capacity_ - framesUsed;
+    const auto availableToRead = writePos - readPos;
 
-    if (framesFree == 0) [[unlikely]] {
+    if (availableToRead > capacity_) [[unlikely]] {
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
         return 0;
     }
 
-    /// Copies non-interleaved audio to a buffer array from an AudioBufferList struct.
-    const auto copyToBuffersFromAudioBufferList = [](void *const _Nonnull *const _Nonnull dst, std::size_t dstOffset,
-                                                     const AudioBufferList &src, std::size_t srcOffset,
-                                                     std::size_t byteCount) noexcept {
-        for (UInt32 i = 0; i < src.mNumberBuffers; ++i) {
-            assert(srcOffset + byteCount <= src.mBuffers[i].mDataByteSize);
-            std::memcpy(static_cast<unsigned char *>(dst[i]) + dstOffset,
-                        static_cast<const unsigned char *>(src.mBuffers[i].mData) + srcOffset, byteCount);
-        }
-    };
+    const auto availableToWrite = capacity_ - availableToRead;
+    const auto framesToWrite = std::min(availableToWrite, frameCount);
 
-    const auto framesToWrite = std::min(framesFree, frameCount);
+    if (framesToWrite == 0) [[unlikely]] {
+        return 0;
+    }
+
+    const auto bytesToWrite = framesToWrite * format_.mBytesPerFrame;
+    const auto channelCount = bufferList.mNumberBuffers;
+
     const auto writeIndex = writePos & capacityMask_;
     const auto framesToEnd = capacity_ - writeIndex;
 
     if (framesToWrite <= framesToEnd) [[likely]] {
-        copyToBuffersFromAudioBufferList(buffers_, writeIndex * format_.mBytesPerFrame, bufferList, 0,
-                                         framesToWrite * format_.mBytesPerFrame);
+        const auto dstOffset = writeIndex * format_.mBytesPerFrame;
+        for (UInt32 i = 0; i < channelCount; ++i) {
+            assert(bufferList.mBuffers[i].mData != nullptr);
+            assert(bytesToWrite <= bufferList.mBuffers[i].mDataByteSize);
+            std::memcpy(static_cast<unsigned char *>(buffers_[i]) + dstOffset, bufferList.mBuffers[i].mData,
+                        bytesToWrite);
+        }
     } else [[unlikely]] {
         const auto bytesToEnd = framesToEnd * format_.mBytesPerFrame;
-        copyToBuffersFromAudioBufferList(buffers_, writeIndex * format_.mBytesPerFrame, bufferList, 0, bytesToEnd);
-        copyToBuffersFromAudioBufferList(buffers_, 0, bufferList, bytesToEnd,
-                                         (framesToWrite - framesToEnd) * format_.mBytesPerFrame);
+        const auto bytesFromStart = bytesToWrite - bytesToEnd;
+
+        for (UInt32 i = 0; i < channelCount; ++i) {
+            assert(bufferList.mBuffers[i].mData != nullptr);
+            assert(bytesToWrite <= bufferList.mBuffers[i].mDataByteSize);
+            auto *dst = static_cast<unsigned char *>(buffers_[i]);
+            const auto *src = static_cast<const unsigned char *>(bufferList.mBuffers[i].mData);
+            std::memcpy(dst + (writeIndex * format_.mBytesPerFrame), src, bytesToEnd);
+            std::memcpy(dst, src + bytesToEnd, bytesFromStart);
+        }
     }
 
     writePosition_.store(writePos + framesToWrite, std::memory_order_release);
@@ -285,58 +296,63 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
 }
 
 inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
-    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
-    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
+    if (bufferList.mNumberBuffers != format_.mChannelsPerFrame || frameCount == 0 || capacity_ == 0) [[unlikely]] {
+        assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
         return 0;
     }
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto framesAvailable = writePos - readPos;
+    auto availableToRead = writePos - readPos;
 
-    if (framesAvailable == 0) [[unlikely]] {
-        const auto byteCount = frameCount * format_.mBytesPerFrame;
-        for (UInt32 i = 0; i < bufferList.mNumberBuffers; ++i) {
-            assert(byteCount <= bufferList.mBuffers[i].mDataByteSize);
-            std::memset(bufferList.mBuffers[i].mData, 0, byteCount);
-        }
-        return 0;
+    if (availableToRead > capacity_) [[unlikely]] {
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
+        availableToRead = 0;
     }
 
-    /// Copies non-interleaved audio to an AudioBufferList struct from a buffer array.
-    const auto copyToAudioBufferListFromBuffers = [](AudioBufferList &dst, std::size_t dstOffset,
-                                                     const void *const _Nonnull *const _Nonnull src,
-                                                     std::size_t srcOffset, std::size_t byteCount) noexcept {
-        for (UInt32 i = 0; i < dst.mNumberBuffers; ++i) {
-            assert(dstOffset + byteCount <= dst.mBuffers[i].mDataByteSize);
-            std::memcpy(static_cast<unsigned char *>(dst.mBuffers[i].mData) + dstOffset,
-                        static_cast<const unsigned char *>(src[i]) + srcOffset, byteCount);
+    const auto framesToRead = std::min(availableToRead, frameCount);
+    const auto bytesToRead = framesToRead * format_.mBytesPerFrame;
+    const auto channelCount = bufferList.mNumberBuffers;
+
+    if (framesToRead > 0) [[likely]] {
+        const auto readIndex = readPos & capacityMask_;
+        const auto framesToEnd = capacity_ - readIndex;
+
+        if (framesToRead <= framesToEnd) [[likely]] {
+            const auto srcOffset = readIndex * format_.mBytesPerFrame;
+            for (UInt32 i = 0; i < channelCount; ++i) {
+                assert(bufferList.mBuffers[i].mData != nullptr);
+                assert(bytesToRead <= bufferList.mBuffers[i].mDataByteSize);
+                std::memcpy(bufferList.mBuffers[i].mData, static_cast<const unsigned char *>(buffers_[i]) + srcOffset,
+                            bytesToRead);
+            }
+        } else [[unlikely]] {
+            const auto bytesToEnd = framesToEnd * format_.mBytesPerFrame;
+            const auto bytesFromStart = bytesToRead - bytesToEnd;
+
+            for (UInt32 i = 0; i < channelCount; ++i) {
+                assert(bufferList.mBuffers[i].mData != nullptr);
+                assert(bytesToRead <= bufferList.mBuffers[i].mDataByteSize);
+                auto *dst = static_cast<unsigned char *>(bufferList.mBuffers[i].mData);
+                const auto *src = static_cast<const unsigned char *>(buffers_[i]);
+                std::memcpy(dst, src + (readIndex * format_.mBytesPerFrame), bytesToEnd);
+                std::memcpy(dst + bytesToEnd, src, bytesFromStart);
+            }
         }
-    };
 
-    const auto framesToRead = std::min(framesAvailable, frameCount);
-    const auto readIndex = readPos & capacityMask_;
-    const auto framesToEnd = capacity_ - readIndex;
-
-    if (framesToRead <= framesToEnd) [[likely]] {
-        copyToAudioBufferListFromBuffers(bufferList, 0, buffers_, readIndex * format_.mBytesPerFrame,
-                                         framesToRead * format_.mBytesPerFrame);
-    } else [[unlikely]] {
-        const auto bytesToEnd = framesToEnd * format_.mBytesPerFrame;
-        copyToAudioBufferListFromBuffers(bufferList, 0, buffers_, readIndex * format_.mBytesPerFrame, bytesToEnd);
-        copyToAudioBufferListFromBuffers(bufferList, bytesToEnd, buffers_, 0,
-                                         (framesToRead - framesToEnd) * format_.mBytesPerFrame);
+        readPosition_.store(readPos + framesToRead, std::memory_order_release);
     }
 
-    readPosition_.store(readPos + framesToRead, std::memory_order_release);
+    // Fill remainder with silence if fewer than requested frames were read (underrun or buffer empty)
+    if (framesToRead < frameCount) [[unlikely]] {
+        const auto byteOffset = bytesToRead;
+        const auto zeroByteCount = (frameCount - framesToRead) * format_.mBytesPerFrame;
 
-    // Fill remainder with silence if fewer than requested frames read
-    if (framesToRead != frameCount) {
-        const auto byteOffset = framesToRead * format_.mBytesPerFrame;
-        const auto byteCount = (frameCount - framesToRead) * format_.mBytesPerFrame;
-        for (UInt32 i = 0; i < bufferList.mNumberBuffers; ++i) {
-            assert(byteOffset + byteCount <= bufferList.mBuffers[i].mDataByteSize);
-            std::memset(static_cast<unsigned char *>(bufferList.mBuffers[i].mData) + byteOffset, 0, byteCount);
+        for (UInt32 i = 0; i < channelCount; ++i) {
+            assert(bufferList.mBuffers[i].mData != nullptr);
+            assert(byteOffset + zeroByteCount <= bufferList.mBuffers[i].mDataByteSize);
+            auto *dst = static_cast<unsigned char *>(bufferList.mBuffers[i].mData);
+            std::memset(dst + byteOffset, 0, zeroByteCount);
         }
     }
 
@@ -352,32 +368,22 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto framesAvailable = writePos - readPos;
+    const auto availableToRead = writePos - readPos;
 
-    if (framesAvailable == 0) [[unlikely]] {
+    if (availableToRead == 0) {
         return 0;
     }
 
-    const auto framesToDiscard = std::min(framesAvailable, frameCount);
+    if (availableToRead > capacity_) [[unlikely]] {
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
+        return 0;
+    }
+
+    const auto framesToDiscard = std::min(availableToRead, frameCount);
     readPosition_.store(readPos + framesToDiscard, std::memory_order_release);
     return framesToDiscard;
 }
 
-inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
-    if (capacity_ == 0) [[unlikely]] {
-        return 0;
-    }
-
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto framesAvailable = writePos - readPos;
-
-    if (framesAvailable == 0) [[unlikely]] {
-        return 0;
-    }
-
-    readPosition_.store(writePos, std::memory_order_release);
-    return framesAvailable;
-}
+inline auto AudioRingBuffer::discardAll() noexcept -> SizeType { return discard(std::numeric_limits<SizeType>::max()); }
 
 } /* namespace spsc */
