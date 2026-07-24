@@ -292,8 +292,8 @@ TEST_F(AudioRingBufferTest, ConcurrentProducerConsumerStressTest) {
                     float expectedCh0 = static_cast<float>(framesReceived + i);
                     float expectedCh1 = expectedCh0 * 2.0f;
 
-                    ASSERT_FLOAT_EQ(ch0[i], expectedCh0);
-                    ASSERT_FLOAT_EQ(ch1[i], expectedCh1);
+                    EXPECT_FLOAT_EQ(ch0[i], expectedCh0);
+                    EXPECT_FLOAT_EQ(ch1[i], expectedCh1);
                 }
                 framesReceived += readCount;
             } else {
