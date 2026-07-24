@@ -8,6 +8,8 @@
 import Testing
 @testable import CXXAudioRingBuffer
 
+// For test coverage see test/audio_ring_buffer_test.cpp
+
 @Suite struct CXXAudioRingBufferTests {
     @Test func empty() async {
     }

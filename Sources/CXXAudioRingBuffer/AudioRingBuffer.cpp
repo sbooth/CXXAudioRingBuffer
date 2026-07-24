@@ -7,45 +7,12 @@
 
 #include "spsc/AudioRingBuffer.hpp"
 
+#include <bit>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
 #include <utility>
-
-namespace {
-
-/// Returns the number of leading 0-bits in x, starting at the most significant bit position.
-template <typename T> constexpr int clz(T x) noexcept {
-    static_assert(std::is_unsigned_v<T>, "Only unsigned types supported");
-    if (x == 0) {
-        return sizeof(T) * CHAR_BIT;
-    }
-    if constexpr (sizeof(T) < sizeof(unsigned int)) {
-        return __builtin_clz(x) - (sizeof(unsigned int) - sizeof(T)) * CHAR_BIT;
-    } else if constexpr (sizeof(T) == sizeof(unsigned int)) {
-        return __builtin_clz(x);
-    } else if constexpr (sizeof(T) == sizeof(unsigned long)) {
-        return __builtin_clzl(x);
-    } else {
-        return __builtin_clzll(x);
-    }
-}
-
-/// Calculates and returns the smallest integral power of two not less than x.
-/// @param x A value on the closed interval [0, 2147483648].
-/// @return The smallest integral power of two not less than x.
-template <typename T> constexpr T bit_ceil(T x) noexcept {
-    static_assert(std::is_unsigned_v<T>, "Only unsigned types supported");
-    if (x < 2) {
-        return 1;
-    }
-    const auto n = std::numeric_limits<T>::digits - clz(x - 1);
-    assert(n != std::numeric_limits<T>::digits);
-    return T{1} << n;
-}
-
-} /* namespace */
 
 // MARK: Construction and Destruction
 
@@ -110,12 +77,10 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
             std::min(static_cast<std::size_t>(maxAudioBufferFrameCount), maxAllocationFrameCount);
 
     // Round to nearest power of two
-    const auto channelBufferFrameSize = bit_ceil(minFrameCapacity);
+    const auto channelBufferFrameSize = std::bit_ceil(minFrameCapacity);
     if (channelBufferFrameSize > maxChannelBufferFrameSize) [[unlikely]] {
         return false;
     }
-
-    deallocate();
 
     const auto channelBufferByteSize = channelBufferFrameSize * format.mBytesPerFrame;
     const auto allocationSize = (channelBufferByteSize + sizeof(void *)) * format.mChannelsPerFrame;
@@ -125,14 +90,16 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
         return false;
     }
 
-    // Zero the entire allocation
-    std::memset(allocation, 0, allocationSize);
+    std::free(buffers_);
+
+    // buffers_ must point to the base allocation address so std::free() works correctly in deallocate()
+    buffers_ = reinterpret_cast<void **>(allocation);
+
+    // Advance past the void * array
+    auto address = reinterpret_cast<uintptr_t>(allocation);
+    address += format.mChannelsPerFrame * sizeof(void *);
 
     // Assign the channel buffers
-    auto address = reinterpret_cast<uintptr_t>(allocation);
-
-    buffers_ = reinterpret_cast<void **>(address);
-    address += format.mChannelsPerFrame * sizeof(void *);
     for (UInt32 i = 0; i < format.mChannelsPerFrame; ++i) {
         buffers_[i] = reinterpret_cast<void *>(address);
         address += channelBufferByteSize;
