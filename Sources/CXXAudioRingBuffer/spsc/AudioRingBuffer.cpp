@@ -8,10 +8,13 @@
 #include "spsc/AudioRingBuffer.hpp"
 
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 // MARK: Construction and Destruction
@@ -65,27 +68,68 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
         return false;
     }
 
+#if defined(__AVX512F__)
+    constexpr std::size_t alignment = 64;
+#elif defined(__AVX__) || defined(__AVX2__)
+    constexpr std::size_t alignment = 32;
+#elif defined(__SSE2__) || defined(__ARM_NEON) || defined(_M_X64) || defined(_M_ARM64)
+    constexpr std::size_t alignment = 16;
+#else
+    constexpr std::size_t alignment = alignof(std::max_align_t);
+#endif
+
+    static_assert(std::has_single_bit(alignment), "alignment must be a power of two");
+
+    /// Rounds `n` to the next multiple of `align`
+    const auto alignUp = [](auto n, std::size_t align) noexcept {
+        using T = decltype(n);
+        static_assert(std::is_unsigned_v<T>, "n must be an unsigned integer");
+        const auto mask = static_cast<T>(align) - 1;
+        return (n + mask) & ~mask;
+    };
+
+    // Worst-case padding needed to align an arbitrary memory address
+    constexpr std::size_t maxPadding = alignment - 1;
+
+    // Bound channels so pointerArraySize cannot overflow
+    const auto channels = static_cast<std::size_t>(format.mChannelsPerFrame);
+    const auto maxChannels = (std::numeric_limits<std::size_t>::max() - maxPadding) / sizeof(void *);
+    if (channels > maxChannels) [[unlikely]] {
+        return false;
+    }
+
+    const auto pointerArraySize = channels * sizeof(void *);
+    const auto reserved = pointerArraySize + maxPadding;
+
     /// Values larger than this will overflow AudioBuffer.mDataByteSize
     const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
+
     /// Values larger than this will exceed the maximum allocation size
     const auto maxAllocationFrameCount =
-            ((std::numeric_limits<std::size_t>::max() / format.mChannelsPerFrame) - sizeof(void *)) /
-            format.mBytesPerFrame;
+            ((std::numeric_limits<std::size_t>::max() - reserved) / channels) / format.mBytesPerFrame;
 
     /// The maximum size per channel buffer in audio frames
     const auto maxChannelBufferFrameSize =
             std::min(static_cast<std::size_t>(maxAudioBufferFrameCount), maxAllocationFrameCount);
 
-    // Round to nearest power of two
+    // Round up to nearest power of two
     const auto channelBufferFrameSize = std::bit_ceil(minFrameCapacity);
     if (channelBufferFrameSize > maxChannelBufferFrameSize) [[unlikely]] {
         return false;
     }
 
     const auto channelBufferByteSize = channelBufferFrameSize * format.mBytesPerFrame;
-    const auto allocationSize = (channelBufferByteSize + sizeof(void *)) * format.mChannelsPerFrame;
+    const auto alignedChannelByteSize = alignUp(channelBufferByteSize, alignment);
 
-    auto allocation = std::malloc(allocationSize);
+    // Ensure the total allocation size doesn't overflow
+    const auto maxAlignedChannelByteSize = (std::numeric_limits<std::size_t>::max() - reserved) / channels;
+    if (alignedChannelByteSize > maxAlignedChannelByteSize) [[unlikely]] {
+        return false;
+    }
+
+    const auto allocationSize = pointerArraySize + (alignment - 1) + (alignedChannelByteSize * channels);
+
+    auto *allocation = std::malloc(allocationSize);
     if (allocation == nullptr) [[unlikely]] {
         return false;
     }
@@ -96,13 +140,12 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
     buffers_ = reinterpret_cast<void **>(allocation);
 
     // Advance past the void * array
-    auto address = reinterpret_cast<uintptr_t>(allocation);
-    address += format.mChannelsPerFrame * sizeof(void *);
+    auto address = alignUp(reinterpret_cast<uintptr_t>(allocation) + pointerArraySize, alignment);
 
     // Assign the channel buffers
     for (UInt32 i = 0; i < format.mChannelsPerFrame; ++i) {
         buffers_[i] = reinterpret_cast<void *>(address);
-        address += channelBufferByteSize;
+        address += alignedChannelByteSize;
     }
 
     capacity_ = channelBufferFrameSize;
