@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -242,20 +241,13 @@ inline auto AudioRingBuffer::availableToRead() const noexcept -> SizeType {
 // MARK: Writing and Reading Audio
 
 inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
-    if (bufferList.mNumberBuffers != format_.mChannelsPerFrame || frameCount == 0 || capacity_ == 0) [[unlikely]] {
-        assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
 
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     const auto availableToRead = writePos - readPos;
-
-    if (availableToRead > capacity_) [[unlikely]] {
-        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
-        return 0;
-    }
-
     const auto availableToWrite = capacity_ - availableToRead;
     const auto framesToWrite = std::min(availableToWrite, frameCount);
 
@@ -264,7 +256,8 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
     }
 
     const auto bytesToWrite = framesToWrite * format_.mBytesPerFrame;
-    const auto channelCount = bufferList.mNumberBuffers;
+
+    const auto channelCount = format_.mChannelsPerFrame;
 
     const auto writeIndex = writePos & capacityMask_;
     const auto framesToEnd = capacity_ - writeIndex;
@@ -272,8 +265,6 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
     if (framesToWrite <= framesToEnd) [[likely]] {
         const auto dstOffset = writeIndex * format_.mBytesPerFrame;
         for (UInt32 i = 0; i < channelCount; ++i) {
-            assert(bufferList.mBuffers[i].mData != nullptr);
-            assert(bytesToWrite <= bufferList.mBuffers[i].mDataByteSize);
             std::memcpy(static_cast<unsigned char *>(buffers_[i]) + dstOffset, bufferList.mBuffers[i].mData,
                         bytesToWrite);
         }
@@ -282,8 +273,6 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
         const auto bytesFromStart = bytesToWrite - bytesToEnd;
 
         for (UInt32 i = 0; i < channelCount; ++i) {
-            assert(bufferList.mBuffers[i].mData != nullptr);
-            assert(bytesToWrite <= bufferList.mBuffers[i].mDataByteSize);
             auto *dst = static_cast<unsigned char *>(buffers_[i]);
             const auto *src = static_cast<const unsigned char *>(bufferList.mBuffers[i].mData);
             std::memcpy(dst + (writeIndex * format_.mBytesPerFrame), src, bytesToEnd);
@@ -296,23 +285,18 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
 }
 
 inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCount) noexcept -> SizeType {
-    if (bufferList.mNumberBuffers != format_.mChannelsPerFrame || frameCount == 0 || capacity_ == 0) [[unlikely]] {
-        assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+    if (frameCount == 0 || capacity_ == 0) [[unlikely]] {
         return 0;
     }
 
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    auto availableToRead = writePos - readPos;
-
-    if (availableToRead > capacity_) [[unlikely]] {
-        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
-        availableToRead = 0;
-    }
+    const auto availableToRead = writePos - readPos;
 
     const auto framesToRead = std::min(availableToRead, frameCount);
     const auto bytesToRead = framesToRead * format_.mBytesPerFrame;
-    const auto channelCount = bufferList.mNumberBuffers;
+
+    const auto channelCount = format_.mChannelsPerFrame;
 
     if (framesToRead > 0) [[likely]] {
         const auto readIndex = readPos & capacityMask_;
@@ -321,8 +305,6 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
         if (framesToRead <= framesToEnd) [[likely]] {
             const auto srcOffset = readIndex * format_.mBytesPerFrame;
             for (UInt32 i = 0; i < channelCount; ++i) {
-                assert(bufferList.mBuffers[i].mData != nullptr);
-                assert(bytesToRead <= bufferList.mBuffers[i].mDataByteSize);
                 std::memcpy(bufferList.mBuffers[i].mData, static_cast<const unsigned char *>(buffers_[i]) + srcOffset,
                             bytesToRead);
             }
@@ -331,8 +313,6 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
             const auto bytesFromStart = bytesToRead - bytesToEnd;
 
             for (UInt32 i = 0; i < channelCount; ++i) {
-                assert(bufferList.mBuffers[i].mData != nullptr);
-                assert(bytesToRead <= bufferList.mBuffers[i].mDataByteSize);
                 auto *dst = static_cast<unsigned char *>(bufferList.mBuffers[i].mData);
                 const auto *src = static_cast<const unsigned char *>(buffers_[i]);
                 std::memcpy(dst, src + (readIndex * format_.mBytesPerFrame), bytesToEnd);
@@ -349,8 +329,6 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
         const auto zeroByteCount = (frameCount - framesToRead) * format_.mBytesPerFrame;
 
         for (UInt32 i = 0; i < channelCount; ++i) {
-            assert(bufferList.mBuffers[i].mData != nullptr);
-            assert(byteOffset + zeroByteCount <= bufferList.mBuffers[i].mDataByteSize);
             auto *dst = static_cast<unsigned char *>(bufferList.mBuffers[i].mData);
             std::memset(dst + byteOffset, 0, zeroByteCount);
         }
@@ -371,11 +349,6 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     const auto availableToRead = writePos - readPos;
 
     if (availableToRead == 0) {
-        return 0;
-    }
-
-    if (availableToRead > capacity_) [[unlikely]] {
-        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
         return 0;
     }
 
