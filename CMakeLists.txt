@@ -18,7 +18,10 @@ target_include_directories(CXXAudioRingBuffer PUBLIC
 if(MSVC)
     target_compile_options(CXXAudioRingBuffer PRIVATE /W4)
 else()
-    target_compile_options(CXXAudioRingBuffer PRIVATE -Wall -Wextra -framework CoreAudio)
+    target_compile_options(CXXAudioRingBuffer PRIVATE -Wall -Wextra)
+     if(APPLE)
+         target_link_libraries(CXXAudioRingBuffer PRIVATE "-framework CoreAudio")
+     endif()
 endif()
 
 include(GNUInstallDirs)
