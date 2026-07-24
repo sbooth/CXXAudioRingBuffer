@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <new>
 
 namespace spsc {
 
@@ -182,9 +183,9 @@ class AudioRingBuffer final {
     SizeType capacityMask_{0};
 
     /// The free-running write location.
-    AtomicSizeType writePosition_{0};
+    alignas(std::hardware_destructive_interference_size) AtomicSizeType writePosition_{0};
     /// The free-running read location.
-    AtomicSizeType readPosition_{0};
+    alignas(std::hardware_destructive_interference_size) AtomicSizeType readPosition_{0};
 
     static_assert(AtomicSizeType::is_always_lock_free, "Lock-free AtomicSizeType required");
 
