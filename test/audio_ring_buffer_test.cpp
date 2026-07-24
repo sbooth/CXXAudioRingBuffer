@@ -48,8 +48,8 @@ struct AudioBufferListStorage {
 static AudioStreamBasicDescription makeNonInterleavedFloatFormat(UInt32 channels, Float64 sampleRate = 44100.0) {
     AudioStreamBasicDescription format{};
     format.mSampleRate = sampleRate;
-    format.mFormatID = 0x6C70636D;               // kAudioFormatLinearPCM
-    format.mFormatFlags = (1U << 0) | (1U << 5); // Float, Non-Interleaved
+    format.mFormatID = kAudioFormatLinearPCM;
+    format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsNonInterleaved;
     format.mBytesPerPacket = sizeof(float);
     format.mFramesPerPacket = 1;
     format.mBytesPerFrame = sizeof(float);
