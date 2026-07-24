@@ -369,8 +369,12 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     const auto availableToRead = writePos - readPos;
 
-    if (availableToRead == 0 || availableToRead > capacity_) [[unlikely]] {
-        assert(availableToRead <= capacity_);
+    if (availableToRead == 0) {
+        return 0;
+    }
+
+    if (availableToRead > capacity_) [[unlikely]] {
+        assert(false && "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
         return 0;
     }
 
@@ -380,21 +384,7 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
 }
 
 inline auto AudioRingBuffer::discardAll() noexcept -> SizeType {
-    if (capacity_ == 0) [[unlikely]] {
-        return 0;
-    }
-
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto availableToRead = writePos - readPos;
-
-    if (availableToRead == 0 || availableToRead > capacity_) [[unlikely]] {
-        assert(availableToRead <= capacity_);
-        return 0;
-    }
-
-    readPosition_.store(writePos, std::memory_order_release);
-    return availableToRead;
+    return discard(std::numeric_limits<SizeType>::max());
 }
 
 } /* namespace spsc */
