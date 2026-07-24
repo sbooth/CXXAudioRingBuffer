@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(CXXAudioRingBuffer
-    Sources/CXXAudioRingBuffer/AudioRingBuffer.cpp
+    Sources/CXXAudioRingBuffer/spsc/AudioRingBuffer.cpp
     Sources/CXXAudioRingBuffer/include/spsc/AudioRingBuffer.hpp
 )
 add_library(spsc::AudioRingBuffer ALIAS CXXAudioRingBuffer)
