@@ -18,7 +18,7 @@
 
 namespace spsc {
 
-/// A lock-free SPSC ring buffer supporting non-interleaved audio.
+/// A lock-free SPSC ring buffer supporting non-interleaved signed integer or floating-point linear PCM audio.
 ///
 /// This class is thread safe when used with a single producer and a single consumer.
 class AudioRingBuffer final {
@@ -43,7 +43,7 @@ class AudioRingBuffer final {
     ///
     /// The actual buffer capacity will be the smallest integral power of two that is not less than the specified
     /// minimum capacity.
-    /// @note Only non-interleaved formats are supported.
+    /// @note Only non-interleaved signed integer or floating-point linear PCM formats are supported.
     /// @param format The format of the audio that will be written to and read from the buffer.
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
     /// @throw std::invalid_argument if the audio format or buffer capacity is not supported, or std::bad_alloc if
@@ -75,7 +75,7 @@ class AudioRingBuffer final {
     ///
     /// The actual buffer capacity will be the smallest integral power of two that is not less than the specified
     /// minimum capacity.
-    /// @note Only non-interleaved formats are supported.
+    /// @note Only non-interleaved signed integer or floating-point linear PCM formats are supported.
     /// @note This method is not thread safe.
     /// @param format The format of the audio that will be written to and read from this buffer.
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
