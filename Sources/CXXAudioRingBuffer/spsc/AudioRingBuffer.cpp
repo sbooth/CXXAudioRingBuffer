@@ -76,10 +76,9 @@ spsc::AudioRingBuffer::AudioRingBuffer(const AudioStreamBasicDescription &format
 
 spsc::AudioRingBuffer::AudioRingBuffer(AudioRingBuffer &&other) noexcept
     : buffers_{std::exchange(other.buffers_, nullptr)}, capacity_{std::exchange(other.capacity_, 0)},
-      capacityMask_{std::exchange(other.capacityMask_, 0)},
+      capacityMask_{std::exchange(other.capacityMask_, 0)}, format_{std::exchange(other.format_, {})},
       writePosition_{other.writePosition_.exchange(0, std::memory_order_relaxed)},
-      readPosition_{other.readPosition_.exchange(0, std::memory_order_relaxed)},
-      format_{std::exchange(other.format_, {})} {}
+      readPosition_{other.readPosition_.exchange(0, std::memory_order_relaxed)} {}
 
 auto spsc::AudioRingBuffer::operator=(AudioRingBuffer &&other) noexcept -> AudioRingBuffer & {
     if (this != &other) [[likely]] {
