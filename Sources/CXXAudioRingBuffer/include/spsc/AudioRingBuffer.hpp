@@ -46,8 +46,8 @@ class AudioRingBuffer final {
     /// @note Only non-interleaved formats are supported.
     /// @param format The format of the audio that will be written to and read from the buffer.
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
-    /// @throw std::bad_alloc if memory could not be allocated or std::invalid_argument if the buffer capacity is not
-    /// supported.
+    /// @throw std::invalid_argument if the audio format or buffer capacity is not supported, or std::bad_alloc if
+    /// memory could not be allocated.
     AudioRingBuffer(const AudioStreamBasicDescription &format, SizeType minFrameCapacity);
 
     // This class is non-copyable
