@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <cstdlib>
 #include <numeric>
 #include <stdexcept>
 #include <thread>
@@ -17,14 +18,14 @@
 
 #include <gtest/gtest.h>
 
+#ifndef NDEBUG
 namespace {
 // Exits quietly on abort so the death test child process does not produce a crash report
 void exitOnAbort() {
-#ifndef NDEBUG
     std::signal(SIGABRT, [](int) { std::_Exit(EXIT_FAILURE); });
-#endif
 }
 } // namespace
+#endif
 
 namespace spsc {
 namespace test {
@@ -452,6 +453,8 @@ TEST_F(AudioRingBufferTest, ConcurrentProducerConsumerStressTest) {
 
 // MARK: - Death Tests
 
+#ifndef NDEBUG
+
 // Suites named *DeathTest are run before all other tests
 using AudioRingBufferDeathTest = AudioRingBufferTest;
 
@@ -521,6 +524,8 @@ TEST_F(AudioRingBufferTest, ExactlySizedBufferListDoesNotAssert) {
     // Underrun with an exactly sized list
     EXPECT_EQ(ringBuffer.read(readABL.get(), 16), 0U);
 }
+
+#endif /* !NDEBUG */
 
 } // namespace test
 } // namespace spsc
