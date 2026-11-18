@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <numeric>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
