@@ -255,7 +255,6 @@ TEST_F(AudioRingBufferTest, FailedAllocateLeavesBufferIntact) {
     EXPECT_EQ(ringBuffer.availableToRead(), 100U);
 }
 
-
 // ============================================================================
 // Single-Threaded Read/Write Functionality
 // ============================================================================
