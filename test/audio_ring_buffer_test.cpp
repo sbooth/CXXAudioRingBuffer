@@ -77,9 +77,9 @@ class AudioRingBufferTest : public ::testing::Test {
 TEST_F(AudioRingBufferTest, DefaultConstructor) {
     AudioRingBuffer ringBuffer;
     EXPECT_FALSE(static_cast<bool>(ringBuffer));
-    EXPECT_EQ(ringBuffer.capacity(), 0);
-    EXPECT_EQ(ringBuffer.writePosition(), 0);
-    EXPECT_EQ(ringBuffer.readPosition(), 0);
+    EXPECT_EQ(ringBuffer.capacity(), 0U);
+    EXPECT_EQ(ringBuffer.writePosition(), 0U);
+    EXPECT_EQ(ringBuffer.readPosition(), 0U);
     EXPECT_TRUE(ringBuffer.isEmpty());
 }
 
@@ -88,10 +88,10 @@ TEST_F(AudioRingBufferTest, AllocateAndPowerOfTwoCapacity) {
     // Requesting 500 should round up to 512 (power of two)
     EXPECT_TRUE(ringBuffer.allocate(format_, 500));
     EXPECT_TRUE(static_cast<bool>(ringBuffer));
-    EXPECT_GE(ringBuffer.capacity(), 500);
-    EXPECT_EQ(ringBuffer.capacity(), 512);
-    EXPECT_EQ(ringBuffer.availableToWrite(), 512);
-    EXPECT_EQ(ringBuffer.availableToRead(), 0);
+    EXPECT_GE(ringBuffer.capacity(), 500U);
+    EXPECT_EQ(ringBuffer.capacity(), 512U);
+    EXPECT_EQ(ringBuffer.availableToWrite(), 512U);
+    EXPECT_EQ(ringBuffer.availableToRead(), 0U);
     EXPECT_TRUE(ringBuffer.isEmpty());
     EXPECT_FALSE(ringBuffer.isFull());
 }
@@ -104,13 +104,13 @@ TEST_F(AudioRingBufferTest, MoveConstruction) {
     for (std::size_t i = 0; i < 100; ++i) {
         reinterpret_cast<float *>(srcABL.bufferList->mBuffers[0].mData)[i] = static_cast<float>(i);
     }
-    EXPECT_EQ(src.write(srcABL.get(), 100), 100);
+    EXPECT_EQ(src.write(srcABL.get(), 100), 100U);
 
     AudioRingBuffer dst(std::move(src));
 
     EXPECT_TRUE(static_cast<bool>(dst));
     EXPECT_FALSE(static_cast<bool>(src)); // NOLINT(bugprone-use-after-move)
-    EXPECT_EQ(dst.availableToRead(), 100);
+    EXPECT_EQ(dst.availableToRead(), 100U);
     EXPECT_EQ(dst.capacity(), kMinCapacity);
 }
 
@@ -124,6 +124,137 @@ TEST_F(AudioRingBufferTest, MoveAssignment) {
     EXPECT_FALSE(static_cast<bool>(src)); // NOLINT(bugprone-use-after-move)
     EXPECT_EQ(dst.capacity(), kMinCapacity);
 }
+
+// ============================================================================
+// Format and Capacity Validation
+// ============================================================================
+
+TEST_F(AudioRingBufferTest, MonoWithoutNonInterleavedFlagIsAccepted) {
+    auto monoFormat = makeNonInterleavedFloatFormat(1);
+    monoFormat.mFormatFlags &= ~kAudioFormatFlagIsNonInterleaved;
+
+    AudioRingBuffer ringBuffer;
+    ASSERT_TRUE(ringBuffer.allocate(monoFormat, 64));
+    EXPECT_NO_THROW(AudioRingBuffer(monoFormat, 64));
+
+    AudioBufferListStorage writeABL(1, 16, sizeof(float));
+    AudioBufferListStorage readABL(1, 16, sizeof(float));
+    auto *src = reinterpret_cast<float *>(writeABL.bufferList->mBuffers[0].mData);
+    for (std::size_t i = 0; i < 16; ++i) {
+        src[i] = static_cast<float>(i);
+    }
+
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 16), 16U);
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 16), 16U);
+
+    auto *dst = reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData);
+    for (std::size_t i = 0; i < 16; ++i) {
+        EXPECT_FLOAT_EQ(dst[i], src[i]);
+    }
+}
+
+TEST_F(AudioRingBufferTest, MonoSignedIntegerWithoutNonInterleavedFlagIsAccepted) {
+    AudioStreamBasicDescription monoFormat{};
+    monoFormat.mSampleRate = 44100.0;
+    monoFormat.mFormatID = kAudioFormatLinearPCM;
+    monoFormat.mFormatFlags = kAudioFormatFlagIsSignedInteger;
+    monoFormat.mBytesPerPacket = 2;
+    monoFormat.mFramesPerPacket = 1;
+    monoFormat.mBytesPerFrame = 2;
+    monoFormat.mChannelsPerFrame = 1;
+    monoFormat.mBitsPerChannel = 16;
+
+    AudioRingBuffer ringBuffer;
+    EXPECT_TRUE(ringBuffer.allocate(monoFormat, 64));
+}
+
+// read() zero-fills underruns, which is not silence for these encodings, so they are rejected whether or not they are
+// flagged as non-interleaved and for any channel count
+TEST_F(AudioRingBufferTest, FormatsWithNonZeroSilenceAreRejected) {
+    AudioStreamBasicDescription unsigned8{};
+    unsigned8.mSampleRate = 44100.0;
+    unsigned8.mFormatID = kAudioFormatLinearPCM;
+    unsigned8.mFormatFlags = 0; // Unsigned integer: silence is 0x80
+    unsigned8.mBytesPerPacket = 1;
+    unsigned8.mFramesPerPacket = 1;
+    unsigned8.mBytesPerFrame = 1;
+    unsigned8.mChannelsPerFrame = 1;
+    unsigned8.mBitsPerChannel = 8;
+
+    auto muLaw = unsigned8;
+    muLaw.mFormatID = kAudioFormatULaw; // Silence is 0xff
+
+    auto aLaw = unsigned8;
+    aLaw.mFormatID = kAudioFormatALaw; // Silence is 0xd5
+
+    for (auto format : {unsigned8, muLaw, aLaw}) {
+        for (const UInt32 channels : {1u, 2u}) {
+            for (const bool nonInterleaved : {false, true}) {
+                format.mChannelsPerFrame = channels;
+                format.mFormatFlags = nonInterleaved ? kAudioFormatFlagIsNonInterleaved : 0;
+                SCOPED_TRACE(testing::Message() << "formatID=" << format.mFormatID << " channels=" << channels
+                                                << " nonInterleaved=" << nonInterleaved);
+
+                AudioRingBuffer ringBuffer;
+                EXPECT_FALSE(ringBuffer.allocate(format, 64));
+                EXPECT_THROW(AudioRingBuffer(format, 64), std::invalid_argument);
+            }
+        }
+    }
+}
+
+TEST_F(AudioRingBufferTest, NonInterleavedSignedIntegerIsAccepted) {
+    AudioStreamBasicDescription format{};
+    format.mSampleRate = 44100.0;
+    format.mFormatID = kAudioFormatLinearPCM;
+    format.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsNonInterleaved;
+    format.mBytesPerPacket = 2;
+    format.mFramesPerPacket = 1;
+    format.mBytesPerFrame = 2;
+    format.mChannelsPerFrame = 2;
+    format.mBitsPerChannel = 16;
+
+    AudioRingBuffer ringBuffer;
+    EXPECT_TRUE(ringBuffer.allocate(format, 64));
+}
+
+TEST_F(AudioRingBufferTest, InterleavedMultichannelIsRejected) {
+    auto interleavedFormat = format_;
+    interleavedFormat.mFormatFlags &= ~kAudioFormatFlagIsNonInterleaved;
+
+    AudioRingBuffer ringBuffer;
+    EXPECT_FALSE(ringBuffer.allocate(interleavedFormat, kMinCapacity));
+    EXPECT_THROW(AudioRingBuffer(interleavedFormat, kMinCapacity), std::invalid_argument);
+}
+
+TEST_F(AudioRingBufferTest, CapacityOutOfRangeThrowsInvalidArgument) {
+    EXPECT_THROW(AudioRingBuffer(format_, AudioRingBuffer::minCapacity - 1), std::invalid_argument);
+    EXPECT_THROW(AudioRingBuffer(format_, AudioRingBuffer::maxCapacity + 1), std::invalid_argument);
+}
+
+TEST_F(AudioRingBufferTest, CapacityTooLargeForFormatThrowsInvalidArgument) {
+    // 2^31 frames * 4 bytes per frame overflows AudioBuffer.mDataByteSize even though it is <= maxCapacity
+    constexpr auto oversizeCapacity = AudioRingBuffer::SizeType{1} << 31;
+
+    AudioRingBuffer ringBuffer;
+    EXPECT_FALSE(ringBuffer.allocate(format_, oversizeCapacity));
+    EXPECT_THROW(AudioRingBuffer(format_, oversizeCapacity), std::invalid_argument);
+}
+
+TEST_F(AudioRingBufferTest, FailedAllocateLeavesBufferIntact) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage writeABL(kChannels, 100, sizeof(float));
+    ASSERT_EQ(ringBuffer.write(writeABL.get(), 100), 100U);
+
+    auto invalidFormat = format_;
+    invalidFormat.mBytesPerFrame = 0;
+    EXPECT_FALSE(ringBuffer.allocate(invalidFormat, kMinCapacity));
+
+    EXPECT_TRUE(static_cast<bool>(ringBuffer));
+    EXPECT_EQ(ringBuffer.capacity(), kMinCapacity);
+    EXPECT_EQ(ringBuffer.availableToRead(), 100U);
+}
+
 
 // ============================================================================
 // Single-Threaded Read/Write Functionality
@@ -149,7 +280,7 @@ TEST_F(AudioRingBufferTest, BasicWriteAndRead) {
     EXPECT_EQ(ringBuffer.availableToWrite(), 1024 - frameCount);
 
     EXPECT_EQ(ringBuffer.read(readABL.get(), frameCount), frameCount);
-    EXPECT_EQ(ringBuffer.availableToRead(), 0);
+    EXPECT_EQ(ringBuffer.availableToRead(), 0U);
 
     // Verify written data matches read data
     auto *ch0Read = reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData);
@@ -168,8 +299,8 @@ TEST_F(AudioRingBufferTest, RingBufferWrapAround) {
     AudioBufferListStorage readABL(kChannels, 200, sizeof(float));
 
     // Write 200 frames, read 200 frames -> writePos=200, readPos=200
-    EXPECT_EQ(ringBuffer.write(writeABL.get(), 200), 200);
-    EXPECT_EQ(ringBuffer.read(readABL.get(), 200), 200);
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 200), 200U);
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 200), 200U);
 
     // Write 100 frames -> this will wrap around the boundary of 256
     for (std::size_t i = 0; i < 100; ++i) {
@@ -177,12 +308,12 @@ TEST_F(AudioRingBufferTest, RingBufferWrapAround) {
         reinterpret_cast<float *>(writeABL.bufferList->mBuffers[1].mData)[i] = static_cast<float>(i + 1);
     }
 
-    EXPECT_EQ(ringBuffer.write(writeABL.get(), 100), 100);
-    EXPECT_EQ(ringBuffer.writePosition(), 300);
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 100), 100U);
+    EXPECT_EQ(ringBuffer.writePosition(), 300U);
 
     // Read wrapped frames
     std::fill_n(reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData), 100, 0.0f);
-    EXPECT_EQ(ringBuffer.read(readABL.get(), 100), 100);
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 100), 100U);
 
     auto *ch0 = reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData);
     for (std::size_t i = 0; i < 100; ++i) {
@@ -204,10 +335,10 @@ TEST_F(AudioRingBufferTest, UnderrunFillsWithSilence) {
     std::fill_n(reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData), 100, -99.0f);
     std::fill_n(reinterpret_cast<float *>(readABL.bufferList->mBuffers[1].mData), 100, -99.0f);
 
-    EXPECT_EQ(ringBuffer.write(writeABL.get(), 50), 50);
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 50), 50U);
 
     // Request 100 frames, only 50 are available
-    EXPECT_EQ(ringBuffer.read(readABL.get(), 100), 50);
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 100), 50U);
 
     auto *ch0Read = reinterpret_cast<float *>(readABL.bufferList->mBuffers[0].mData);
 
@@ -225,16 +356,16 @@ TEST_F(AudioRingBufferTest, DiscardAndDiscardAll) {
     AudioRingBuffer ringBuffer(format_, 512);
     AudioBufferListStorage writeABL(kChannels, 200, sizeof(float));
 
-    EXPECT_EQ(ringBuffer.write(writeABL.get(), 200), 200);
-    EXPECT_EQ(ringBuffer.availableToRead(), 200);
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 200), 200U);
+    EXPECT_EQ(ringBuffer.availableToRead(), 200U);
 
     // Discard partial
-    EXPECT_EQ(ringBuffer.discard(50), 50);
-    EXPECT_EQ(ringBuffer.availableToRead(), 150);
+    EXPECT_EQ(ringBuffer.discard(50), 50U);
+    EXPECT_EQ(ringBuffer.availableToRead(), 150U);
 
     // Discard remaining
-    EXPECT_EQ(ringBuffer.discardAll(), 150);
-    EXPECT_EQ(ringBuffer.availableToRead(), 0);
+    EXPECT_EQ(ringBuffer.discardAll(), 150U);
+    EXPECT_EQ(ringBuffer.availableToRead(), 0U);
     EXPECT_TRUE(ringBuffer.isEmpty());
 }
 
@@ -306,7 +437,7 @@ TEST_F(AudioRingBufferTest, ConcurrentProducerConsumerStressTest) {
     producer.join();
     consumer.join();
 
-    EXPECT_EQ(ringBuffer.availableToRead(), 0);
+    EXPECT_EQ(ringBuffer.availableToRead(), 0U);
 }
 
 } // namespace test
