@@ -23,7 +23,8 @@ bool isSupportedFormat(const AudioStreamBasicDescription &format) noexcept {
         return false;
     }
 
-    if (format.mFormatID != kAudioFormatLinearPCM || (format.mFormatFlags & (kAudioFormatFlagIsFloat | kAudioFormatFlagIsSignedInteger)) == 0) {
+    if (format.mFormatID != kAudioFormatLinearPCM ||
+        (format.mFormatFlags & (kAudioFormatFlagIsFloat | kAudioFormatFlagIsSignedInteger)) == 0) {
         return false;
     }
 
