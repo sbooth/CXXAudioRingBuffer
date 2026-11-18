@@ -8,20 +8,60 @@
 #include "spsc/AudioRingBuffer.hpp"
 
 #include <bit>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
 #include <utility>
 
+namespace {
+
+/// Returns true if the ring buffer can store audio in the specified format.
+///
+/// Mono audio has the same memory layout whether or not it is flagged as non-interleaved, so it is accepted either way.
+bool isSupportedFormat(const AudioStreamBasicDescription &format) noexcept {
+    if (format.mBytesPerFrame == 0 || format.mChannelsPerFrame == 0) {
+        return false;
+    }
+    return format.mChannelsPerFrame == 1 || (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+}
+
+/// Returns the per-channel frame capacity to allocate for a supported format, or 0 if the capacity is not supported.
+std::size_t perChannelFrameCapacity(const AudioStreamBasicDescription &format, std::size_t minFrameCapacity) noexcept {
+    using spsc::AudioRingBuffer;
+    if (minFrameCapacity < AudioRingBuffer::minCapacity || minFrameCapacity > AudioRingBuffer::maxCapacity) {
+        return 0;
+    }
+
+    /// Values larger than this will overflow AudioBuffer.mDataByteSize
+    const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
+    /// Values larger than this will exceed the maximum allocation size
+    const auto maxAllocationFrameCount =
+            ((std::numeric_limits<std::size_t>::max() / format.mChannelsPerFrame) - sizeof(void *)) /
+            format.mBytesPerFrame;
+
+    /// The maximum size per channel buffer in audio frames
+    const auto maxChannelBufferFrameSize =
+            std::min(static_cast<std::size_t>(maxAudioBufferFrameCount), maxAllocationFrameCount);
+
+    // Round up to the next power of two; bounded by maxCapacity so std::bit_ceil is well-defined
+    const auto channelBufferFrameSize = std::bit_ceil(minFrameCapacity);
+    if (channelBufferFrameSize > maxChannelBufferFrameSize) {
+        return 0;
+    }
+    return channelBufferFrameSize;
+}
+
+} /* namespace */
+
 // MARK: Construction and Destruction
 
 spsc::AudioRingBuffer::AudioRingBuffer(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) {
-    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
-        format.mChannelsPerFrame == 0) [[unlikely]] {
+    if (!isSupportedFormat(format)) [[unlikely]] {
         throw std::invalid_argument("unsupported audio format");
     }
-    if (minFrameCapacity < minCapacity || minFrameCapacity > maxCapacity) [[unlikely]] {
+    if (perChannelFrameCapacity(format, minFrameCapacity) == 0) [[unlikely]] {
         throw std::invalid_argument("capacity out of range");
     }
     if (!allocate(format, minFrameCapacity)) [[unlikely]] {
@@ -57,28 +97,12 @@ spsc::AudioRingBuffer::~AudioRingBuffer() noexcept { std::free(buffers_); }
 // MARK: Buffer Management
 
 bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) noexcept {
-    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
-        format.mChannelsPerFrame == 0) [[unlikely]] {
-        return false;
-    }
-    if (minFrameCapacity < minCapacity || minFrameCapacity > maxCapacity) [[unlikely]] {
+    if (!isSupportedFormat(format)) [[unlikely]] {
         return false;
     }
 
-    /// Values larger than this will overflow AudioBuffer.mDataByteSize
-    const auto maxAudioBufferFrameCount = std::numeric_limits<UInt32>::max() / format.mBytesPerFrame;
-    /// Values larger than this will exceed the maximum allocation size
-    const auto maxAllocationFrameCount =
-            ((std::numeric_limits<std::size_t>::max() / format.mChannelsPerFrame) - sizeof(void *)) /
-            format.mBytesPerFrame;
-
-    /// The maximum size per channel buffer in audio frames
-    const auto maxChannelBufferFrameSize =
-            std::min(static_cast<std::size_t>(maxAudioBufferFrameCount), maxAllocationFrameCount);
-
-    // Round to nearest power of two
-    const auto channelBufferFrameSize = std::bit_ceil(minFrameCapacity);
-    if (channelBufferFrameSize > maxChannelBufferFrameSize) [[unlikely]] {
+    const auto channelBufferFrameSize = perChannelFrameCapacity(format, minFrameCapacity);
+    if (channelBufferFrameSize == 0) [[unlikely]] {
         return false;
     }
 
@@ -96,7 +120,7 @@ bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, 
     buffers_ = reinterpret_cast<void **>(allocation);
 
     // Advance past the void * array
-    auto address = reinterpret_cast<uintptr_t>(allocation);
+    auto address = reinterpret_cast<std::uintptr_t>(allocation);
     address += format.mChannelsPerFrame * sizeof(void *);
 
     // Assign the channel buffers
