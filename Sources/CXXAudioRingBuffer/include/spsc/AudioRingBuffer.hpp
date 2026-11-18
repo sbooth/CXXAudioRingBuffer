@@ -11,10 +11,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <limits>
 #include <new>
+#include <span>
 
 namespace spsc {
 
@@ -143,7 +145,8 @@ class AudioRingBuffer final {
 
     /// Writes audio and advances the write position.
     /// @note This method is only safe to call from the producer.
-    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format.
+    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format and contains sufficient
+    /// audio.
     /// @param bufferList An audio buffer list containing the data to copy.
     /// @param frameCount The desired number of audio frames to write.
     /// @return The number of audio frames actually written.
@@ -155,7 +158,8 @@ class AudioRingBuffer final {
     /// If fewer than the requested number of frames are available the remainder of the audio buffer list will be set to
     /// zero.
     /// @note This method is only safe to call from the consumer.
-    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format.
+    /// @attention The caller must ensure the audio buffer list matches the ring buffer's format and has sufficient
+    /// capacity.
     /// @param bufferList An audio buffer list to receive the data.
     /// @param frameCount The desired number of audio frames to read.
     /// @return The number of audio frames actually read.
@@ -247,9 +251,19 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
         return 0;
     }
 
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+#ifndef NDEBUG
+    for (const AudioBuffer &buffer : std::span{bufferList.mBuffers, bufferList.mNumberBuffers}) {
+        assert(buffer.mData != nullptr);
+        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame);
+    }
+#endif /* !NDEBUG */
+
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     const auto availableToRead = writePos - readPos;
+    assert(availableToRead <= capacity_ &&
+           "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
     const auto availableToWrite = capacity_ - availableToRead;
     const auto framesToWrite = std::min(availableToWrite, frameCount);
 
@@ -291,9 +305,19 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
         return 0;
     }
 
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+#ifndef NDEBUG
+    for (const AudioBuffer &buffer : std::span{bufferList.mBuffers, bufferList.mNumberBuffers}) {
+        assert(buffer.mData != nullptr);
+        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame);
+    }
+#endif /* !NDEBUG */
+
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     const auto availableToRead = writePos - readPos;
+    assert(availableToRead <= capacity_ &&
+           "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
 
     const auto framesToRead = std::min(availableToRead, frameCount);
     const auto bytesToRead = framesToRead * format_.mBytesPerFrame;
@@ -349,6 +373,8 @@ inline auto AudioRingBuffer::discard(SizeType frameCount) noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     const auto availableToRead = writePos - readPos;
+    assert(availableToRead <= capacity_ &&
+           "Buffer invariant violated: (writePosition_ - readPosition_) exceeds capacity_");
 
     if (availableToRead == 0) {
         return 0;
