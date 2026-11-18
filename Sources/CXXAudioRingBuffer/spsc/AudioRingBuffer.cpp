@@ -17,16 +17,6 @@
 
 namespace {
 
-/// Returns true if the ring buffer can store audio in the specified format.
-///
-/// Mono audio has the same memory layout whether or not it is flagged as non-interleaved, so it is accepted either way.
-bool isSupportedFormat(const AudioStreamBasicDescription &format) noexcept {
-    if (format.mBytesPerFrame == 0 || format.mChannelsPerFrame == 0) {
-        return false;
-    }
-    return format.mChannelsPerFrame == 1 || (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
-}
-
 /// Returns the per-channel frame capacity to allocate for a supported format, or 0 if the capacity is not supported.
 std::size_t perChannelFrameCapacity(const AudioStreamBasicDescription &format, std::size_t minFrameCapacity) noexcept {
     using spsc::AudioRingBuffer;
@@ -58,7 +48,8 @@ std::size_t perChannelFrameCapacity(const AudioStreamBasicDescription &format, s
 // MARK: Construction and Destruction
 
 spsc::AudioRingBuffer::AudioRingBuffer(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) {
-    if (!isSupportedFormat(format)) [[unlikely]] {
+    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
+        format.mChannelsPerFrame == 0) [[unlikely]] {
         throw std::invalid_argument("unsupported audio format");
     }
     if (perChannelFrameCapacity(format, minFrameCapacity) == 0) [[unlikely]] {
@@ -97,7 +88,8 @@ spsc::AudioRingBuffer::~AudioRingBuffer() noexcept { std::free(buffers_); }
 // MARK: Buffer Management
 
 bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) noexcept {
-    if (!isSupportedFormat(format)) [[unlikely]] {
+    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
+        format.mChannelsPerFrame == 0) [[unlikely]] {
         return false;
     }
 

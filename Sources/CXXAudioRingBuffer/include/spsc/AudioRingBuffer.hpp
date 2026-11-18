@@ -43,12 +43,11 @@ class AudioRingBuffer final {
     ///
     /// The actual buffer capacity will be the smallest integral power of two that is not less than the specified
     /// minimum capacity.
-    /// @note Only non-interleaved formats are supported. Mono formats are accepted whether or not they are flagged as
-    /// non-interleaved.
+    /// @note Only non-interleaved formats are supported.
     /// @param format The format of the audio that will be written to and read from the buffer.
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
-    /// @throw std::bad_alloc if memory could not be allocated or std::invalid_argument if the buffer capacity is not
-    /// supported.
+    /// @throw std::invalid_argument if the audio format or buffer capacity is not supported, or std::bad_alloc if
+    /// memory could not be allocated.
     AudioRingBuffer(const AudioStreamBasicDescription &format, SizeType minFrameCapacity);
 
     // This class is non-copyable
@@ -76,8 +75,7 @@ class AudioRingBuffer final {
     ///
     /// The actual buffer capacity will be the smallest integral power of two that is not less than the specified
     /// minimum capacity.
-    /// @note Only non-interleaved formats are supported. Mono formats are accepted whether or not they are flagged as
-    /// non-interleaved.
+    /// @note Only non-interleaved formats are supported.
     /// @note This method is not thread safe.
     /// @param format The format of the audio that will be written to and read from this buffer.
     /// @param minFrameCapacity The desired minimum capacity in audio frames.
