@@ -17,6 +17,20 @@
 
 namespace {
 
+/// Returns true if the ring buffer can store audio in the specified format.
+bool isSupportedFormat(const AudioStreamBasicDescription &format) noexcept {
+    if (format.mBytesPerFrame == 0 || format.mChannelsPerFrame == 0) {
+        return false;
+    }
+
+    if (format.mFormatID != kAudioFormatLinearPCM || (format.mFormatFlags & (kAudioFormatFlagIsFloat | kAudioFormatFlagIsSignedInteger)) == 0) {
+        return false;
+    }
+
+    // Mono audio has the same memory layout whether or not it is flagged as non-interleaved
+    return format.mChannelsPerFrame == 1 || (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+}
+
 /// Returns the per-channel frame capacity to allocate for a supported format, or 0 if the capacity is not supported.
 std::size_t perChannelFrameCapacity(const AudioStreamBasicDescription &format, std::size_t minFrameCapacity) noexcept {
     using spsc::AudioRingBuffer;
@@ -48,8 +62,7 @@ std::size_t perChannelFrameCapacity(const AudioStreamBasicDescription &format, s
 // MARK: Construction and Destruction
 
 spsc::AudioRingBuffer::AudioRingBuffer(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) {
-    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
-        format.mChannelsPerFrame == 0) [[unlikely]] {
+    if (!isSupportedFormat(format)) [[unlikely]] {
         throw std::invalid_argument("unsupported audio format");
     }
     if (perChannelFrameCapacity(format, minFrameCapacity) == 0) [[unlikely]] {
@@ -88,8 +101,7 @@ spsc::AudioRingBuffer::~AudioRingBuffer() noexcept { std::free(buffers_); }
 // MARK: Buffer Management
 
 bool spsc::AudioRingBuffer::allocate(const AudioStreamBasicDescription &format, SizeType minFrameCapacity) noexcept {
-    if ((format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0 || format.mBytesPerFrame == 0 ||
-        format.mChannelsPerFrame == 0) [[unlikely]] {
+    if (!isSupportedFormat(format)) [[unlikely]] {
         return false;
     }
 
