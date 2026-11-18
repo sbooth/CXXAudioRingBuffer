@@ -9,12 +9,22 @@
 
 #include <algorithm>
 #include <atomic>
+#include <csignal>
 #include <numeric>
 #include <stdexcept>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+namespace {
+// Exits quietly on abort so the death test child process does not produce a crash report
+void exitOnAbort() {
+#ifndef NDEBUG
+    std::signal(SIGABRT, [](int) { std::_Exit(EXIT_FAILURE); });
+#endif
+}
+} // namespace
 
 namespace spsc {
 namespace test {
@@ -438,6 +448,78 @@ TEST_F(AudioRingBufferTest, ConcurrentProducerConsumerStressTest) {
     consumer.join();
 
     EXPECT_EQ(ringBuffer.availableToRead(), 0U);
+}
+
+// MARK: - Death Tests
+
+// Suites named *DeathTest are run before all other tests
+using AudioRingBufferDeathTest = AudioRingBufferTest;
+
+TEST_F(AudioRingBufferDeathTest, WriteWithTooFewBuffersAsserts) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage writeABL(kChannels - 1, 16, sizeof(float));
+    EXPECT_DEBUG_DEATH(
+            {
+                exitOnAbort();
+                (void)ringBuffer.write(writeABL.get(), 16);
+            },
+            "Channel count mismatch");
+}
+
+TEST_F(AudioRingBufferDeathTest, WriteWithTooSmallBufferAsserts) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage writeABL(kChannels, 16, sizeof(float));
+    EXPECT_DEBUG_DEATH(
+            {
+                exitOnAbort();
+                (void)ringBuffer.write(writeABL.get(), 17);
+            },
+            "Insufficient data in audio buffer");
+}
+
+TEST_F(AudioRingBufferDeathTest, WriteWithNullDataAsserts) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage writeABL(kChannels, 16, sizeof(float));
+    writeABL.bufferList->mBuffers[1].mData = nullptr;
+    EXPECT_DEBUG_DEATH(
+            {
+                exitOnAbort();
+                (void)ringBuffer.write(writeABL.get(), 16);
+            },
+            "null audio buffer");
+}
+
+TEST_F(AudioRingBufferDeathTest, ReadWithTooFewBuffersAsserts) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage readABL(kChannels - 1, 16, sizeof(float));
+    EXPECT_DEBUG_DEATH(
+            {
+                exitOnAbort();
+                (void)ringBuffer.read(readABL.get(), 16);
+            },
+            "Channel count mismatch");
+}
+
+// The underrun silence fill writes frameCount frames even when the ring buffer is empty
+TEST_F(AudioRingBufferDeathTest, ReadFromEmptyBufferWithTooSmallBufferAsserts) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage readABL(kChannels, 16, sizeof(float));
+    EXPECT_DEBUG_DEATH(
+            {
+                exitOnAbort();
+                (void)ringBuffer.read(readABL.get(), 17);
+            },
+            "Insufficient audio buffer capacity");
+}
+
+TEST_F(AudioRingBufferTest, ExactlySizedBufferListDoesNotAssert) {
+    AudioRingBuffer ringBuffer(format_, kMinCapacity);
+    AudioBufferListStorage writeABL(kChannels, 16, sizeof(float));
+    AudioBufferListStorage readABL(kChannels, 16, sizeof(float));
+    EXPECT_EQ(ringBuffer.write(writeABL.get(), 16), 16U);
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 16), 16U);
+    // Underrun with an exactly sized list
+    EXPECT_EQ(ringBuffer.read(readABL.get(), 16), 0U);
 }
 
 } // namespace test

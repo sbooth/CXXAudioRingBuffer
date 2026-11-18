@@ -251,11 +251,11 @@ inline auto AudioRingBuffer::write(const AudioBufferList &bufferList, SizeType f
         return 0;
     }
 
-    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame && "Channel count mismatch");
 #ifndef NDEBUG
     for (const AudioBuffer &buffer : std::span{bufferList.mBuffers, bufferList.mNumberBuffers}) {
-        assert(buffer.mData != nullptr);
-        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame);
+        assert(buffer.mData != nullptr && "null audio buffer");
+        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame && "Insufficient data in audio buffer");
     }
 #endif /* !NDEBUG */
 
@@ -305,11 +305,11 @@ inline auto AudioRingBuffer::read(AudioBufferList &bufferList, SizeType frameCou
         return 0;
     }
 
-    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame);
+    assert(bufferList.mNumberBuffers == format_.mChannelsPerFrame && "Channel count mismatch");
 #ifndef NDEBUG
     for (const AudioBuffer &buffer : std::span{bufferList.mBuffers, bufferList.mNumberBuffers}) {
-        assert(buffer.mData != nullptr);
-        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame);
+        assert(buffer.mData != nullptr && "null audio buffer");
+        assert(frameCount <= buffer.mDataByteSize / format_.mBytesPerFrame && "Insufficient audio buffer capacity");
     }
 #endif /* !NDEBUG */
 
