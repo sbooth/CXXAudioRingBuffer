@@ -451,9 +451,9 @@ TEST_F(AudioRingBufferTest, ConcurrentProducerConsumerStressTest) {
     EXPECT_EQ(ringBuffer.availableToRead(), 0U);
 }
 
-// MARK: - Death Tests
-
 #ifndef NDEBUG
+
+// MARK: - Death Tests
 
 // Suites named *DeathTest are run before all other tests
 using AudioRingBufferDeathTest = AudioRingBufferTest;
@@ -525,7 +525,7 @@ TEST_F(AudioRingBufferTest, ExactlySizedBufferListDoesNotAssert) {
     EXPECT_EQ(ringBuffer.read(readABL.get(), 16), 0U);
 }
 
-#endif /* !NDEBUG */
+#endif
 
 } // namespace test
 } // namespace spsc
