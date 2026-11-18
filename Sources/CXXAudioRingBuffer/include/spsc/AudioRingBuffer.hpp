@@ -187,15 +187,15 @@ class AudioRingBuffer final {
     /// The per-channel capacity of ``buffers_`` in audio frames minus one.
     SizeType capacityMask_{0};
 
+    /// The format of the audio this buffer contains.
+    AudioStreamBasicDescription format_{};
+
     /// The free-running write location.
     alignas(std::hardware_destructive_interference_size) AtomicSizeType writePosition_{0};
     /// The free-running read location.
     alignas(std::hardware_destructive_interference_size) AtomicSizeType readPosition_{0};
 
     static_assert(AtomicSizeType::is_always_lock_free, "Lock-free AtomicSizeType required");
-
-    /// The format of the audio this buffer contains.
-    AudioStreamBasicDescription format_{};
 };
 
 // MARK: - Implementation -
