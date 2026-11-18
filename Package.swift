@@ -21,6 +21,9 @@ let package = Package(
     targets: [
         .target(
             name: "CXXAudioRingBuffer",
+            cxxSettings: [
+                .define("NDEBUG", .when(configuration: .release)),
+            ],
             linkerSettings: [
                 .linkedFramework("CoreAudio"),
             ]
